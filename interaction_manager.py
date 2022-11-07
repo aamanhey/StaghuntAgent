@@ -78,7 +78,7 @@ class InteractionManager:
                 points[rabbits[i]] = 0
                 i += 1
                 k += 1
-            # assign remaining characters original value
+            # Assign remaining characters original value
             else:
                 if i < len(rabbits):
                     points[rabbits[i]] = RABBIT_VALUE

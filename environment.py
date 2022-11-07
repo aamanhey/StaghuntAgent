@@ -71,7 +71,7 @@ class StaghuntEnv(Env):
                     else:
                         characters[character]["agent"] = BasicHunterAgent(character, type)
             self.c_reg = characters
-            self.subject = self.set_random_subject() # the subject we that is going to act as a main player
+            self.subject = self.set_random_subject() # the subject is going to act as a main player
         elif len(characters > 8):
             print("E: Environment cannot handle more than 8 characters.")
         else:
@@ -106,8 +106,8 @@ class StaghuntEnv(Env):
         # Put elements on the canvas
         self.create_canvas()
 
-        # self.state = self.encode(self.map)
-        self.state = None
+        self.state = self.encode(self.map)
+        
         return self.state
 
     def get_reward(self, arr):
@@ -132,6 +132,7 @@ class StaghuntEnv(Env):
         return (reward, terminated)
 
     def step(self):
+        # Call agents to get moves for each character
         if not self.play_status:
             print("Game is over, stop trying to play.")
             return self.state
@@ -156,6 +157,7 @@ class StaghuntEnv(Env):
         s = self.encode(self.map)
         self.state = s
 
+        # End game when game is over
         self.play_status = self.check_game_rules() # Return False if game is over
 
         # Give rewards to each agent
@@ -208,8 +210,7 @@ class StaghuntEnv(Env):
                     color = colors["o"]
                     id = " "
 
-                    if len(characters) <= 1:
-                        # single character
+                    if len(characters) <= 1: # single character
                         character = characters[0]
                         color = colors[types[0]]
                         num = character[1]
@@ -417,7 +418,7 @@ def main():
     # Setup Staghunt Environment
     env = StaghuntEnv()
 
-    # # Create Random Environment
+    # Create Random Environment
     env.reset()
     env.render()
 

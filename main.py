@@ -43,7 +43,7 @@ def main():
     # Initialize agent
     agent = ManualAgent("h1", "h")
 
-    #Create ineraction environment for training
+    # Create ineraction environment for training
     env.add_agent(agent)
 
     while env.get_status():
