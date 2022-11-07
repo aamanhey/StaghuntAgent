@@ -1,0 +1,228 @@
+import random
+import math
+import numpy as np
+
+from interaction_manager import InteractionManager
+
+class StaticAgent:
+    def __init__(self, id="default"):
+        self.id = id
+        self.map = None
+
+    def direction_to_vector(self, direction):
+        reference_dict = {
+            'n':[0, -1],
+            'e':[1, 0],
+            's':[0, 1],
+            'w':[-1, 0],
+        }
+        return reference_dict[direction]
+
+    def check_within_bounds(self, a, b, x):
+        return (a <= x) and (x <= b)
+
+    def validate_agent_position(self, x, y):
+        within_y_bounds = self.check_within_bounds(1, len(self.map)-2, y)
+        within_x_bounds = self.check_within_bounds(1, len(self.map[0])-2, x)
+        return  within_y_bounds and within_x_bounds
+
+    def generate_valid_moves(self, pos):
+        moves = []
+        dir = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+        for i in range(4):
+            a, b = np.add(pos, dir[i])
+            if self.validate_agent_position(a, b):
+                moves.append([a, b])
+        return moves
+
+    # Overriden Methods
+    def get_move(self, map, pos):
+        self.map = map.copy()
+        return pos
+
+class RandomAgent(StaticAgent):
+    def __init__(self, id):
+       StaticAgent.__init__(self, id)
+
+    def get_rand_move(self, pos):
+         moves = self.generate_valid_moves(pos)
+         return random.choice(moves)
+
+    def get_move(self, map, pos):
+        self.map = map.copy()
+        return self.get_rand_move(pos)
+
+class StaghuntAgent(RandomAgent):
+    def __init__(self, id='default-staghunt', type="", kind="general"):
+        RandomAgent.__init__(self, id)
+        self.kinds = {
+            "general":"general",
+            "prey":"prey",
+            "static-prey": "static-prey",
+            "general-hunter":"general-hunter",
+            "specific-hunter":"specific-hunter",
+        }
+
+        self.type = type
+
+        self.kind = self.kinds[kind]
+
+        self.points_table = {
+            "": 0,
+            "r": 1,
+            "s": 5,
+            "h": 0
+        }
+
+        self.points = 0
+
+        if type in self.points_table.keys():
+            self.points = self.points_table[type]
+        else:
+            print("E: Could not initialize agent points with given type.")
+
+    def get_move(self, map, pos):
+        self.map = map.copy()
+        if self.kind != self.kinds["static-prey"]:
+            return self.get_rand_move(pos)
+        return pos
+
+    def step(self, next_state, reward, done, info=None):
+        # Update agent logic
+        final_reward = reward
+        if reward == 0 and self.type == "h":
+            final_reward = -1
+        print("----{}----\nr, d, s: {}, {},\n{}\n----------".format(self.id, final_reward, done, next_state))
+
+class ManualAgent(StaghuntAgent):
+    def __init__(self, id, type):
+        print("Creating Manual Control Agent.")
+        StaghuntAgent.__init__(self, id, type)
+
+    def convert_input(self, user_input, pos):
+        dir = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+        index_dict = {
+            "N": 0,
+            "E": 1,
+            "S": 2,
+            "W": 3
+        }
+        if user_input.capitalize() not in index_dict.keys():
+            return [0, 0]
+        index = index_dict[user_input.capitalize()]
+        move = np.add(pos, dir[index])
+        return move
+
+    def contains_pos(self, sub_arr, arr):
+        for element in arr:
+            if tuple(sub_arr) == tuple(element):
+                return True
+        return False
+
+    def get_move(self, map, pos):
+        self.map = map.copy()
+        moves = self.generate_valid_moves(pos)
+        move = []
+        prompt = 'Input direction (NESW) for {}:'.format(self.id)
+        while not self.contains_pos(move, moves):
+            user_input = input(prompt)
+            move = self.convert_input(user_input, pos)
+            prompt = 'Input a valid direction (NESW) for {}:'.format(self.id)
+        return move
+
+class BasicHunterAgent(StaghuntAgent):
+    def __init__(self, id, type):
+        StaghuntAgent.__init__(self, id, type)
+        self.kind = self.kinds["general-hunter"]
+        self.prey_types = ["r", "s"]
+
+class ProximityAgent(BasicHunterAgent):
+    def __init__(self, id, type, targets={}):
+        BasicHunterAgent.__init__(self, id, type)
+        self.targets = targets
+        self.current_target = None
+        self.current_target_dist = -1
+
+    def set_targets(self, targets):
+        self.targets = targets
+
+    def set_targets_from_map(self, targets, map):
+        # Finds targets on a given map
+        target_positions = {}
+        for i in range(len(map)):
+            for j in range(len(map[0])):
+                value = map[i][j]
+                characters = self.encoder.decode_type(value)
+                if self.kind == self.kinds["specific-hunter"]:
+                    characters = self.encoder.decode_id_to_character(value)
+                for character in characters:
+                    if characters in targets:
+                        target_positions[character] = (i, j)
+        return target_positions
+
+    def get_dist(self, c1, c2):
+        return math.sqrt((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2)
+
+    def get_move_to_target(self, pos, target_pos=None):
+        if not target_pos:
+            moves = self.generate_valid_rand_moves()
+            max = self.max_dist
+            optimal_moves = []
+            for move in moves:
+                dist = self.get_dist(move, target_pos)
+                if dist < max:
+                    optimal_moves = [move]
+                elif dist == max:
+                    optimal_moves.append(move)
+            if len(optimal_moves) > 0:
+                return (self.get_dist(optimal_moves[0], target_pos), random.choice(optimal_moves))
+        # Target not found
+        return (-1, pos)
+
+    def get_move(self, map, pos):
+        self.map = map.copy()
+        self.max_dist = len(map ** 2) + 1
+
+        optimal_dist = self.max_dist
+        optimal_targets = []
+        optimal_moves = []
+        for target in self.targets.keys:
+            target_pos = self.targets[target]
+            # ProximityAgent Policy: Attempt to capture the closest prey
+            dist, move = self.get_move_to_target(pos, target_pos)
+            if dist < optimal_dist:
+                optimal_dist = dist
+                optimal_moves = [move]
+                optimal_targets = [target]
+            elif dist == optimal_dist:
+                optimal_moves.append(move)
+                optimal_targets.append(target)
+        if len(optimal_moves) > 0:
+            i = random.randint(len(optimal_moves) - 1)
+            self.current_target = optimal_targets[i]
+            self.current_target_dist = optimal_dist
+            return optimal_moves[i]
+
+        # Target not found, get random move
+        return self.get_rand_move()
+
+class PreyAgent(StaghuntAgent):
+    # Create a class for the stags to run away
+    def __init__(self, id, type, predator_type="h"):
+        StaghuntAgent.__init__(self, id, type, kind="prey")
+
+    def get_move(self, map, pos):
+        self.map = map.copy()
+        moves = self.generate_valid_rand_moves()
+        optimal_moves = []
+        for move in moves:
+            x, y = move
+            # Prey Policy: Stay away from hunters
+            unoccupied = (self.map[y][x] == 1)
+            unoccupied_by_predator = (predator_ids and self.encoder.decode_type(self.map[y][x]) != predator_type)
+            if unoccupied or unoccupied_by_predator:
+                optimal_moves.append(move)
+        if len(optimal_moves) > 0:
+            return random.choice(optimal_moves)
+        else:
+            return pos
