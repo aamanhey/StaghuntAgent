@@ -48,12 +48,12 @@ class StaghuntEnv(Env):
             self.map = map
         else:
             # Create a nxn matrix to represent the world
-            m = self.MAP_DIMENSION
+            n = self.MAP_DIMENSION
 
             self.x_bounds = [1, map_dim-2] # inclusive, -2 for walls and 0-index
             self.y_bounds = self.x_bounds
 
-            self.map = self.create_map(m, len(characters))
+            self.map = self.create_map(n, c=len(characters))
             self.base_map = self.map.copy()
 
         self.subject = ""
@@ -69,14 +69,14 @@ class StaghuntEnv(Env):
                         # @TODO: Change kind to mobile
                         characters[character]["agent"] = StaghuntAgent(character, type, kind="static-prey")
                     else:
-                        characters[character]["agent"] = BasicHunterAgent(character, type)
+                        characters[character]["agent"] = BasicHunterAgent(character)
             self.c_reg = characters
             self.subject = self.set_random_subject() # the subject is going to act as a main player
         elif len(characters > 8):
             print("E: Environment cannot handle more than 8 characters.")
         else:
             print("E: No characters give, initializing Basic Hunter.")
-            basic_hunter = {"agent": BasicHunterAgent("h1", "h", selp.map), "position": (0, 0)}
+            basic_hunter = {"agent": BasicHunterAgent("h1"), "position": (0, 0)}
             self.c_reg = {"h1": basic_hunter}
             self.subject = "h1"
 
@@ -107,7 +107,7 @@ class StaghuntEnv(Env):
         self.create_canvas()
 
         self.state = self.encode(self.map)
-        
+
         return self.state
 
     def get_reward(self, arr):
@@ -134,7 +134,6 @@ class StaghuntEnv(Env):
     def step(self):
         # Call agents to get moves for each character
         if not self.play_status:
-            print("Game is over, stop trying to play.")
             return self.state
 
         map = self.map
@@ -168,9 +167,6 @@ class StaghuntEnv(Env):
             agent = character["agent"]
             point = points[c_key] if c_key in points.keys() else 0
             agent.step(s, point, not self.play_status, None)
-
-        if not self.play_status:
-            print("GAME OVER!")
 
         self.current_step += 1
 
@@ -239,16 +235,34 @@ class StaghuntEnv(Env):
                 return False
         return True
 
-    def encode(self, map):
+    def encode_simple(self, map):
         return str(map)
 
-    def decode(self, map):
+    def decode_simple(self, map):
         return np.matrix(map)
 
     def get_character_positions(self):
         character_pos = []
         for c_key in self.characters_registry.keys():
             character_pos.append()
+
+    def encode(self, state_map):
+        index = "{}{}".format(len(state_map), len(state_map[0]))
+        for i in range(len(state_map)):
+            for j in range(len(state_map[0])):
+                space = state_map[i][j]
+                index += str(space)
+        return index
+
+    def decode(self, encoded_state):
+        m = str(encoded_state[0])
+        n = str(encoded_state[1])
+        map = self.create_map(m, n)
+
+        for i in range(m):
+            for j in range(n):
+                map[i][j] = int(encoded_state[i*n + j])
+        return index_arr
 
     # Map Methods
 
@@ -281,14 +295,15 @@ class StaghuntEnv(Env):
             print("E: Too many characters in the game")
             return reference_dict[64]
 
-    def create_map(self, n, c=1):
-        m = self.get_d_type(c)
-        l = n # map length
+    def create_map(self, m, n=0, c=1):
+        d = self.get_d_type(c)
+        l = m # map length
         while (l-1)**2 < c:
             l += 1
-        if l != n:
+        if l != m:
             print("E: Too many characters for the desired map, map length increased to {}.".format(l))
-        world = np.zeros((l, l), dtype=m)
+        k = n if n >= l else l
+        world = np.zeros((l, k), dtype=d)
         for i in range(l):
             for j in range(l):
                 if self.validate_character_position([i, j]):
@@ -314,17 +329,20 @@ class StaghuntEnv(Env):
         self.subject = random.choice(list(keys))
 
     def set_subject(self, id):
-        if(type(id) == "str" and len(id) == 2):
+        if id in self.c_reg.keys():
             self.subject = id
         else:
             print("E: Was not given valid id for main agent.")
 
+    def get_subject(self):
+        return self.c_reg[self.subject]
+
     def add_agent(self, agent):
         if agent.id in self.c_reg.keys():
-            print("Adding {} agent to character registry: {}".format(agent.id, self.c_reg))
+            # print("Adding {} agent to character registry: {}".format(agent.id, self.c_reg))
             self.update_agent(agent.id, agent)
         else:
-            print("Character ({}) was not found in character registry.".format(a_key))
+            print("E: Character ({}) was not found in character registry.".format(a_key))
 
     def set_agents(self, agents):
         for a_key in agents.keys():

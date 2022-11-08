@@ -3,6 +3,7 @@ import math
 import numpy as np
 
 from interaction_manager import InteractionManager
+from encoder import StaghuntEncoder
 
 class StaticAgent:
     def __init__(self, id="default"):
@@ -25,6 +26,12 @@ class StaticAgent:
         within_y_bounds = self.check_within_bounds(1, len(self.map)-2, y)
         within_x_bounds = self.check_within_bounds(1, len(self.map[0])-2, x)
         return  within_y_bounds and within_x_bounds
+
+    def calc_move(self, pos, dir_indx):
+        # dir represents direction as a number from 0 to 3, N to W
+        dir = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+        a, b = np.add(pos, dir[dir_indx])
+        return [a, b]
 
     def generate_valid_moves(self, pos):
         moves = []
@@ -67,19 +74,10 @@ class StaghuntAgent(RandomAgent):
 
         self.kind = self.kinds[kind]
 
-        self.points_table = {
-            "": 0,
-            "r": 1,
-            "s": 5,
-            "h": 0
-        }
+        self.reward = 0
 
-        self.points = 0
-
-        if type in self.points_table.keys():
-            self.points = self.points_table[type]
-        else:
-            print("E: Could not initialize agent points with given type.")
+    def reset(self):
+        self.reward = 0
 
     def get_move(self, map, pos):
         self.map = map.copy()
@@ -92,11 +90,12 @@ class StaghuntAgent(RandomAgent):
         final_reward = reward
         if reward == 0 and self.type == "h":
             final_reward = -1
-        print("----{}----\nr, d, s: {}, {},\n{}\n----------".format(self.id, final_reward, done, next_state))
+        self.reward += final_reward
+        # print("----{}----\nr, d, s: {}, {},\n{}\n----------".format(self.id, final_reward, done, next_state))
 
 class ManualAgent(StaghuntAgent):
     def __init__(self, id, type):
-        print("Creating Manual Control Agent.")
+        # print("Creating Manual Control Agent.")
         StaghuntAgent.__init__(self, id, type)
 
     def convert_input(self, user_input, pos):
@@ -131,15 +130,17 @@ class ManualAgent(StaghuntAgent):
         return move
 
 class BasicHunterAgent(StaghuntAgent):
-    def __init__(self, id, type):
-        StaghuntAgent.__init__(self, id, type)
+    def __init__(self, id):
+        StaghuntAgent.__init__(self, id, "h")
         self.kind = self.kinds["general-hunter"]
         self.prey_types = ["r", "s"]
 
 class ProximityAgent(BasicHunterAgent):
-    def __init__(self, id, type, targets={}):
-        BasicHunterAgent.__init__(self, id, type)
-        self.targets = targets
+    def __init__(self, id, targets=[], reach=1):
+        BasicHunterAgent.__init__(self, id)
+        self.targets = targets # ids of each target
+        self.reach = reach # how far away the agent can see other characters
+        self.encoder = StaghuntEncoder()
         self.current_target = None
         self.current_target_dist = -1
 
@@ -152,11 +153,11 @@ class ProximityAgent(BasicHunterAgent):
         for i in range(len(map)):
             for j in range(len(map[0])):
                 value = map[i][j]
-                characters = self.encoder.decode_type(value)
+                characters = self.encoder.decode_id(value)
                 if self.kind == self.kinds["specific-hunter"]:
                     characters = self.encoder.decode_id_to_character(value)
                 for character in characters:
-                    if characters in targets:
+                    if character in targets:
                         target_positions[character] = (i, j)
         return target_positions
 
@@ -226,3 +227,33 @@ class PreyAgent(StaghuntAgent):
             return random.choice(optimal_moves)
         else:
             return pos
+
+class BruteForceAgent(BasicHunterAgent):
+    def __init__(self, id):
+        BasicHunterAgent.__init__(self, id)
+
+    def get_rand_move(self, pos):
+         moves = self.generate_valid_moves(pos)
+         return random.choice(moves)
+
+    def get_move(self, map, pos):
+        self.map = map.copy()
+        return self.get_rand_move(pos)
+
+    def step(self, next_state, reward, done, info=None):
+        # Update agent logic
+        final_reward = reward
+        if reward == 0 and self.type == "h":
+            final_reward = -1
+        self.reward += final_reward
+        # print("----{}----\nr, d, s: {}, {}\n----------".format(self.id, final_reward, done))
+
+'''
+class QLearningAgent(StaghuntAgent):
+    # @TODO: Create QLearning Class
+'''
+
+'''
+class ApprxQLearningAgent(StaghuntAgent):
+    # @TODO: Create ApprxQLearningAgent Class
+'''
