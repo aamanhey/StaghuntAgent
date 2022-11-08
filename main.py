@@ -23,7 +23,6 @@ def train_k_eps(env, k):
         rewards.append(r)
     return (steps, rewards)
 
-
 def create_training_env(map_dim, character_setup, agent):
     # Setup Staghunt Environment
     # @TODO: Need to allow maps without the border walls
@@ -36,7 +35,6 @@ def create_training_env(map_dim, character_setup, agent):
     return env
 
 def display_training_env(map_dim, character_setup, agent):
-    # Prints more stuff
     # Setup Staghunt Environment
     print("-----Creating Staghunt Environment-----")
 
@@ -70,6 +68,69 @@ def display_training_env(map_dim, character_setup, agent):
 
     print("Training Summary:\nAgent took {} steps and earned a reward of {}.".format(env.current_step, agent.reward))
 
+def manual():
+    # Initialize agent
+    manual_agent = ManualAgent("h1", "h")
+
+    display_training_env(4, character_setup, manual_agent)
+
+    # Create training environment with agent
+    env = create_training_env(4, character_setup, manual_agent)
+
+    while env.get_status():
+        env.step()
+    subject = env.get_subject()
+    agent = subject["agent"]
+    r = agent.reward
+
+    print("Training Summary:\nAgent took {} steps and earned a reward of {}.".format(env.current_step, agent.reward))
+
+def brute_force():
+    os.system('clear')
+
+    character_setup = {
+        "r1": {"position": (1, 1)},
+        "h1": {"position": (2, 2)}
+    }
+
+    agent = BruteForceAgent("h1")
+    env = create_training_env(4, character_setup, agent)
+
+    epochs = 0
+    penalties, reward = 0, 0
+
+    done = False
+
+    while env.get_status():
+        env.step()
+        epochs += 1
+
+    subject = env.get_subject()
+    agent = subject["agent"]
+    r = agent.reward
+    agent.reset()
+
+    k = 10
+    t_steps, t_reward = train_k_eps(env, k)
+
+    print("Ran {} Training Episodes".format(k))
+    print("k: steps reward")
+    for i in range(k):
+        print("{}: {} {}".format(i, t_steps[i], t_reward[i]))
+
+# List Results
+def list_results(k, t_steps, t_reward):
+    print("Ran {} Training Episodes".format(k))
+    print("k: steps reward")
+    for i in range(k):
+        print("{}: {} {}".format(i, t_steps[i], t_reward[i]))
+
+# Average Results
+def avg_results(t_steps, t_reward):
+    steps = np.average(t_steps)
+    reward = np.average(t_reward)
+    print("Training Summary:\nOn average, the agent took {} steps and earned a reward of {}.".format(steps, reward))
+
 def main():
     os.system('clear')
 
@@ -95,14 +156,15 @@ def main():
 
     # Initialize agent
     manual_agent = ManualAgent("h1", "h")
-    brute_agent = BruteForceAgent("h1")
-    proximity_agent = ProximityAgent("h1", ["r1"])
 
-    display_training_env(4, character_setup, proximity_agent)
+    display_training_env(4, character_setup, manual_agent)
+
+    # Create training environment with agent
+    env = create_training_env(4, character_setup, manual_agent)
 
     while env.get_status():
         env.step()
-        env.render()
 
 if __name__ == '__main__':
-    main()
+    result = brute_force()
+    # main()

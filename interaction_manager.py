@@ -10,7 +10,6 @@ class InteractionManager:
     def set_reg(self, reg):
         self.c_reg = reg
 
-    def get_interactions(self):
     def get_interactions(self, getSingles=False):
         # Returns a dict of characters that occupy same space
         spaces = {}
