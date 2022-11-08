@@ -3,6 +3,7 @@ import math
 import numpy as np
 
 from interaction_manager import InteractionManager
+from encoder import StaghuntEncoder
 
 class StaticAgent:
     def __init__(self, id="default"):
@@ -25,6 +26,12 @@ class StaticAgent:
         within_y_bounds = self.check_within_bounds(1, len(self.map)-2, y)
         within_x_bounds = self.check_within_bounds(1, len(self.map[0])-2, x)
         return  within_y_bounds and within_x_bounds
+
+    def calc_move(self, pos, dir_indx):
+        # dir represents direction as a number from 0 to 3, N to W
+        dir = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+        a, b = np.add(pos, dir[dir_indx])
+        return [a, b]
 
     def generate_valid_moves(self, pos):
         moves = []
@@ -67,19 +74,10 @@ class StaghuntAgent(RandomAgent):
 
         self.kind = self.kinds[kind]
 
-        self.points_table = {
-            "": 0,
-            "r": 1,
-            "s": 5,
-            "h": 0
-        }
+        self.reward = 0
 
-        self.points = 0
-
-        if type in self.points_table.keys():
-            self.points = self.points_table[type]
-        else:
-            print("E: Could not initialize agent points with given type.")
+    def reset(self):
+        self.reward = 0
 
     def get_move(self, map, pos):
         self.map = map.copy()
@@ -92,11 +90,12 @@ class StaghuntAgent(RandomAgent):
         final_reward = reward
         if reward == 0 and self.type == "h":
             final_reward = -1
-        print("----{}----\nr, d, s: {}, {},\n{}\n----------".format(self.id, final_reward, done, next_state))
+        self.reward += final_reward
+        # print("----{}----\nr, d, s: {}, {},\n{}\n----------".format(self.id, final_reward, done, next_state))
 
 class ManualAgent(StaghuntAgent):
     def __init__(self, id, type):
-        print("Creating Manual Control Agent.")
+        # print("Creating Manual Control Agent.")
         StaghuntAgent.__init__(self, id, type)
 
     def convert_input(self, user_input, pos):
@@ -131,15 +130,17 @@ class ManualAgent(StaghuntAgent):
         return move
 
 class BasicHunterAgent(StaghuntAgent):
-    def __init__(self, id, type):
-        StaghuntAgent.__init__(self, id, type)
+    def __init__(self, id):
+        StaghuntAgent.__init__(self, id, "h")
         self.kind = self.kinds["general-hunter"]
         self.prey_types = ["r", "s"]
 
 class ProximityAgent(BasicHunterAgent):
-    def __init__(self, id, type, targets={}):
-        BasicHunterAgent.__init__(self, id, type)
-        self.targets = targets
+    def __init__(self, id, targets=[], reach=1):
+        BasicHunterAgent.__init__(self, id)
+        self.targets = targets # ids of each target
+        self.reach = reach # how far away the agent can see other characters
+        self.encoder = StaghuntEncoder()
         self.current_target = None
         self.current_target_dist = -1
 
@@ -152,59 +153,80 @@ class ProximityAgent(BasicHunterAgent):
         for i in range(len(map)):
             for j in range(len(map[0])):
                 value = map[i][j]
-                characters = self.encoder.decode_type(value)
+                characters = self.encoder.decode_id(value)
                 if self.kind == self.kinds["specific-hunter"]:
                     characters = self.encoder.decode_id_to_character(value)
                 for character in characters:
-                    if characters in targets:
+                    if character in targets:
                         target_positions[character] = (i, j)
         return target_positions
 
     def get_dist(self, c1, c2):
         return math.sqrt((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2)
 
-    def get_move_to_target(self, pos, target_pos=None):
-        if not target_pos:
-            moves = self.generate_valid_rand_moves()
-            max = self.max_dist
-            optimal_moves = []
-            for move in moves:
+    def get_dir_to_target(self, pos, target_pos):
+        max = self.max_dist
+        optimal_dirs = [] # optimal directions
+
+
+        # Get a list of moves with shortest distance to target
+        for i in range(4):
+            move = self.calc_move(pos, i)
+            if self.validate_agent_position(move[0], move[1]):
                 dist = self.get_dist(move, target_pos)
                 if dist < max:
-                    optimal_moves = [move]
+                    optimal_dirs = [i]
+                    max = dist
                 elif dist == max:
-                    optimal_moves.append(move)
-            if len(optimal_moves) > 0:
-                return (self.get_dist(optimal_moves[0], target_pos), random.choice(optimal_moves))
+                    optimal_dirs.append(i)
+
+        # Return optimal move, if any
+        if len(optimal_dirs) > 0:
+            i = random.randint(0, len(optimal_dirs) - 1)
+            move = self.calc_move(pos, optimal_dirs[i])
+
+            return (self.get_dist(move, target_pos), optimal_dirs[i])
+
         # Target not found
-        return (-1, pos)
+        return (-1, -1)
 
     def get_move(self, map, pos):
         self.map = map.copy()
         self.max_dist = len(map ** 2) + 1
 
+        x, y = pos
+        r = self.reach
+        observable_space = map[y-r:y+r+1, x-r:x+r+1]
+        # Gives the position in the sub matrix, not the original map
+        target_positions = self.set_targets_from_map(self.targets, observable_space)
+
+        # Choose shortest path to closest target
         optimal_dist = self.max_dist
         optimal_targets = []
         optimal_moves = []
-        for target in self.targets.keys:
-            target_pos = self.targets[target]
-            # ProximityAgent Policy: Attempt to capture the closest prey
-            dist, move = self.get_move_to_target(pos, target_pos)
-            if dist < optimal_dist:
-                optimal_dist = dist
-                optimal_moves = [move]
-                optimal_targets = [target]
-            elif dist == optimal_dist:
-                optimal_moves.append(move)
-                optimal_targets.append(target)
+        for target in self.targets:
+            # Pass if target not found
+            if target in target_positions.keys():
+                target_pos = target_positions[target]
+                # ProximityAgent Policy: Attempt to capture the closest prey
+                dist, dir = self.get_dir_to_target(pos, target_pos)
+                move = self.calc_move(pos, dir)
+                if 0 < dist < optimal_dist:
+                    optimal_dist = dist
+                    optimal_moves = [move]
+                    optimal_targets = [target]
+                elif dist == optimal_dist:
+                    optimal_moves.append(move)
+                    optimal_targets.append(target)
         if len(optimal_moves) > 0:
-            i = random.randint(len(optimal_moves) - 1)
+            i = random.randint(0, len(optimal_moves) - 1)
             self.current_target = optimal_targets[i]
             self.current_target_dist = optimal_dist
+
             return optimal_moves[i]
 
         # Target not found, get random move
-        return self.get_rand_move()
+        return self.get_rand_move(pos)
 
 class PreyAgent(StaghuntAgent):
     # Create a class for the stags to run away
@@ -226,3 +248,37 @@ class PreyAgent(StaghuntAgent):
             return random.choice(optimal_moves)
         else:
             return pos
+
+class BruteForceAgent(BasicHunterAgent):
+    def __init__(self, id):
+        BasicHunterAgent.__init__(self, id)
+
+    def get_rand_move(self, pos):
+         moves = self.generate_valid_moves(pos)
+         return random.choice(moves)
+
+    def get_move(self, map, pos):
+        self.map = map.copy()
+        return self.get_rand_move(pos)
+
+class QLearningAgent(BasicHunterAgent):
+    def __init__(self, id):
+        BasicHunterAgent.__init__(self, id)
+
+    def get_move(self, map, pos):
+        self.map = map.copy()
+        # @TODO: Give move based on Q-Value
+        return self.get_rand_move(pos)
+
+    def step(self, next_state, reward, done, info=None):
+        # @TODO: Add Q-Learning Logic
+        # Update agent logic
+        final_reward = reward
+        if reward == 0 and self.type == "h":
+            final_reward = -1
+        self.reward += final_reward
+
+'''
+class ApprxQLearningAgent(StaghuntAgent):
+    # @TODO: Create ApprxQLearningAgent Class
+'''
