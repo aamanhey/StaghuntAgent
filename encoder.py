@@ -39,6 +39,30 @@ class Encoder():
     def decode_id_to_character(self, id):
         return self.decode_id(id)[0]
 
+    def encode_simple(self, map):
+        return str(map)
+
+    def decode_simple(self, map):
+        return np.matrix(map)
+
+    def encode(self, state_map):
+        index = "{}{}".format(len(state_map), len(state_map[0]))
+        for i in range(len(state_map)):
+            for j in range(len(state_map[0])):
+                space = state_map[i][j]
+                index += str(space)
+        return index
+
+    def decode(self, encoded_state):
+        m = str(encoded_state[0])
+        n = str(encoded_state[1])
+        map = self.create_map(m, n)
+
+        for i in range(m):
+            for j in range(n):
+                map[i][j] = int(encoded_state[i*n + j])
+        return index_arr
+
 class StaghuntEncoder(Encoder):
     def __init__(self):
         self.types = ["r", "s", "h"]
