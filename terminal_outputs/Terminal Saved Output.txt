@@ -358,4 +358,4 @@ reward: 6
 
 Testing Summary:
   Agent took 15 steps and earned a reward of 6.
-(base) macintosh@BlckMagikMan StaghuntAgent % 
+(base) macintosh@BlckMagikMan StaghuntAgent %
