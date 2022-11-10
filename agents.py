@@ -1,10 +1,14 @@
+import math
+import pickle
 import random
 import collections
-import math
 import numpy as np
 
-from interaction_manager import InteractionManager
+from os.path import exists
 from encoder import StaghuntEncoder
+from interaction_manager import InteractionManager
+
+TABLE_AGENTS = ["QLearningAgent"]
 
 class StaticAgent:
     def __init__(self, id="default"):
@@ -26,7 +30,8 @@ class StaticAgent:
     def validate_agent_position(self, x, y):
         within_y_bounds = self.check_within_bounds(1, len(self.map)-2, y)
         within_x_bounds = self.check_within_bounds(1, len(self.map[0])-2, x)
-        return  within_y_bounds and within_x_bounds
+        open_space = (self.map[y][x] != 0)
+        return open_space and (within_y_bounds and within_x_bounds)
 
     def calc_move(self, pos, dir_indx):
         # dir represents direction as a number from 0 to 3, N to W
@@ -135,101 +140,6 @@ class BasicHunterAgent(StaghuntAgent):
         self.kind = self.kinds["general-hunter"]
         self.prey_types = ["r", "s"]
 
-class ProximityAgent(BasicHunterAgent):
-    # @TODO: Make this a functional agent
-    def __init__(self, id, targets=[], reach=1):
-        BasicHunterAgent.__init__(self, id)
-        self.targets = targets # ids of each target
-        self.reach = reach # how far away the agent can see other characters
-        self.encoder = StaghuntEncoder()
-        self.current_target = None
-        self.current_target_dist = -1
-
-    def set_targets(self, targets):
-        self.targets = targets
-
-    def set_targets_from_map(self, targets, map):
-        # Finds targets on a given map
-        target_positions = {}
-        for i in range(len(map)):
-            for j in range(len(map[0])):
-                value = map[i][j]
-                characters = self.encoder.decode_id(value)
-                if self.kind == self.kinds["specific-hunter"]:
-                    characters = self.encoder.decode_id_to_character(value)
-                for character in characters:
-                    if character in targets:
-                        target_positions[character] = (i, j)
-        return target_positions
-
-    def get_dist(self, c1, c2):
-        return math.sqrt((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2)
-
-    def get_dir_to_target(self, pos, target_pos):
-        max = self.max_dist
-        optimal_dirs = [] # optimal directions
-
-        # @TODO: Fix map indexing
-
-        # Get a list of moves with shortest distance to target
-        for i in range(4):
-            move = self.calc_move(pos, i)
-            if self.validate_agent_position(move[0], move[1]):
-                dist = self.get_dist(move, target_pos)
-                if dist < max:
-                    optimal_dirs = [i]
-                    max = dist
-                elif dist == max:
-                    optimal_dirs.append(i)
-
-        # Return optimal move, if any
-        if len(optimal_dirs) > 0:
-            i = random.randint(0, len(optimal_dirs) - 1)
-            move = self.calc_move(pos, optimal_dirs[i])
-
-            return (self.get_dist(move, target_pos), optimal_dirs[i])
-
-        # Target not found
-        return (-1, -1)
-
-    def get_move(self, map, pos):
-        self.map = map.copy()
-        self.max_dist = len(map ** 2) + 1
-
-        x, y = pos
-        r = self.reach
-        observable_space = map[y-r:y+r+1, x-r:x+r+1]
-        # Gives the position in the sub matrix, not the original map
-        target_positions = self.set_targets_from_map(self.targets, observable_space)
-
-        # Choose shortest path to closest target
-        optimal_dist = self.max_dist
-        optimal_targets = []
-        optimal_moves = []
-        for target in self.targets:
-            # Pass if target not found
-            if target in target_positions.keys():
-                target_pos = target_positions[target]
-                # ProximityAgent Policy: Attempt to capture the closest prey
-                dist, dir = self.get_dir_to_target(pos, target_pos)
-                move = self.calc_move(pos, dir)
-                if 0 < dist < optimal_dist:
-                    optimal_dist = dist
-                    optimal_moves = [move]
-                    optimal_targets = [target]
-                elif dist == optimal_dist:
-                    optimal_moves.append(move)
-                    optimal_targets.append(target)
-        if len(optimal_moves) > 0:
-            i = random.randint(0, len(optimal_moves) - 1)
-            self.current_target = optimal_targets[i]
-            self.current_target_dist = optimal_dist
-
-            return optimal_moves[i]
-
-        # Target not found, get random move
-        return self.get_rand_move(pos)
-
 class PreyAgent(StaghuntAgent):
     # Create a class for the stags to run away
     def __init__(self, id, type, predator_type="h"):
@@ -266,6 +176,7 @@ class BruteForceAgent(BasicHunterAgent):
 class QLearningAgent(BasicHunterAgent):
     def __init__(self, id, alpha=0.1, epsilon=0.5, gamma=0.8, delta=0.001):
         BasicHunterAgent.__init__(self, id)
+        self.model = 'QLearningAgent'
         '''
         alpha    - learning rate
         epsilon  - exploration rate
@@ -286,6 +197,15 @@ class QLearningAgent(BasicHunterAgent):
 
         self.q_value = {}
 
+    def get_params(self):
+        params = {
+            "aplha"   : self.alpha,
+            "epsilon" : self.epsilon,
+            "gamma"   : self.gamma,
+            "delta"   : self.delta
+        }
+        return params
+
     # Convergence Methods
 
     def get_delta_avg(self):
@@ -300,6 +220,22 @@ class QLearningAgent(BasicHunterAgent):
             divisor = q_i
         return abs(delta/divisor)
 
+    def save_q_table(self, id=None):
+        filename = 'tables/q-table-{}'.format(id)
+
+        print("Saving table as '{}'".format(filename))
+        with open(filename,'wb') as fp:
+            pickle.dump(self.q_value, fp)
+
+    def load_q_table(self, id=None):
+        filename = 'tables/q-table-{}'.format(id)
+        file_exists = exists(filename)
+        if file_exists:
+            with open(filename,'rb') as fp:
+                self.q_value = pickle.load(fp)
+            return True
+        return False
+
     # Training Methods
 
     def reset(self):
@@ -310,8 +246,11 @@ class QLearningAgent(BasicHunterAgent):
     def training_complete(self):
         return self.hasConverged
 
-    def toggleTraining(self):
-        self.inTraining = not self.inTraining
+    def toggleTraining(self, val=None):
+        if val is not None:
+            self.inTraining = val
+        else:
+            self.inTraining = not self.inTraining
 
     # Q-Value Methods
     def init_q(self, map_id, move_id):

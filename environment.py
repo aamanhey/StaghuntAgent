@@ -1,23 +1,20 @@
 import cv2
+import sys
+import math
 import random
 import pickle
-import math
-import pprint
-import beepy as beep
 import colorama
 import numpy as np
-from time import sleep
-import multiprocessing
+import beepy as beep
 import matplotlib.pyplot as plt
-from IPython.display import clear_output
-import pprint
 
-from gym import Env, spaces
-from colorama import Fore, Back, Style
 from os.path import exists
+from colorama import Fore, Back, Style
+from IPython.display import clear_output
 
-from agents import BasicHunterAgent, StaghuntAgent
+# Staghunt Libraries
 from encoder import StaghuntEncoder
+from agents import BasicHunterAgent, StaghuntAgent
 from interaction_manager import InteractionManager, RABBIT_VALUE, STAG_VALUE
 
 '''
@@ -43,9 +40,11 @@ class StaghuntEnv(Env):
         random.seed(42)
 
         # Create map for the game
-        if map:
-            # @TODO: Build functionality for custom maps
-            self.map = map
+        if map is not None:
+            self.map = map.copy()
+            self.x_bounds = [1, len(map[0])-2] # inclusive, -2 for walls and 0-index
+            self.y_bounds = [1, len(map)-2]
+            self.base_map = self.map.copy()
         else:
             # Create a nxn matrix to represent the world
             n = self.MAP_DIMENSION
@@ -178,14 +177,7 @@ class StaghuntEnv(Env):
             for space in row:
                 s = ''
                 if space == 0:
-                    x_border = (curr_pos[0] == self.x_bounds[0] - 1 or curr_pos[0] == self.x_bounds[1] + 1)
-                    y_border = (curr_pos[1] == self.y_bounds[0] - 1 or curr_pos[1] == self.y_bounds[1] + 1)
-                    if x_border and y_border:
-                        s = '+'
-                    elif x_border:
-                        s = '|'
-                    elif y_border:
-                        s = '-'
+                    s = Back.BLACK + '0'+ Style.RESET_ALL
                 elif space == 1:
                     s = ' '
                 elif self.in_reg(self.encoder.decode_id(space)):
@@ -355,7 +347,9 @@ class StaghuntEnv(Env):
 
     def validate_character_position(self, position):
         x, y = position
-        return (self.x_bounds[0] <= x <= self.x_bounds[1]) and (self.y_bounds[0] <= y <= self.y_bounds[1])
+        within_bounds = (self.x_bounds[0] <= x <= self.x_bounds[1]) and (self.y_bounds[0] <= y <= self.y_bounds[1])
+        open_space = (self.map[y][x] != 0)
+        return within_bounds and open_space
 
     def equivalent_positions(self, c1, c2):
         return (c1[0] == c2[0] and c1[1] == c2[1])
