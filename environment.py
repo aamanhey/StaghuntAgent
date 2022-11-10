@@ -1,23 +1,20 @@
 import cv2
+import sys
+import math
 import random
 import pickle
-import math
-import pprint
-import beepy as beep
 import colorama
 import numpy as np
-from time import sleep
-import multiprocessing
+import beepy as beep
 import matplotlib.pyplot as plt
-from IPython.display import clear_output
-import pprint
 
-from gym import Env, spaces
-from colorama import Fore, Back, Style
 from os.path import exists
+from colorama import Fore, Back, Style
+from IPython.display import clear_output
 
-from agents import BasicHunterAgent, StaghuntAgent
+# Staghunt Libraries
 from encoder import StaghuntEncoder
+from agents import BasicHunterAgent, StaghuntAgent
 from interaction_manager import InteractionManager, RABBIT_VALUE, STAG_VALUE
 
 '''
@@ -43,9 +40,11 @@ class StaghuntEnv(Env):
         random.seed(42)
 
         # Create map for the game
-        if map:
-            # @TODO: Build functionality for custom maps
-            self.map = map
+        if map is not None:
+            self.map = map.copy()
+            self.x_bounds = [1, len(map[0])-2] # inclusive, -2 for walls and 0-index
+            self.y_bounds = [1, len(map)-2]
+            self.base_map = self.map.copy()
         else:
             # Create a nxn matrix to represent the world
             n = self.MAP_DIMENSION
@@ -106,30 +105,9 @@ class StaghuntEnv(Env):
         # Put elements on the canvas
         self.create_canvas()
 
-        self.state = self.encode(self.map)
+        self.state = self.encoder.encode(self.map)
 
         return self.state
-
-    def get_reward(self, arr):
-        rabbit_caught, stag_caught = False
-        groups = self.encoder.get_interactions()
-        counts = self.encoder.get_multi_type_counts(groups)
-        for count in counts:
-            r, s, h = count
-            rabbit_caught = rabbit_caught or (r > 0 and h > 0)
-            stag_caught = stag_caught or (s > 0 and h > 1)
-
-        reward = -1
-        terminated = False
-
-        if stag_caught:
-            reward = STAG_VALUE
-            terminated = True
-        elif rabbit_caught:
-            reward = RABBIT_VALUE
-            terminated = True
-
-        return (reward, terminated)
 
     def step(self):
         # Call agents to get moves for each character
@@ -137,40 +115,58 @@ class StaghuntEnv(Env):
             return self.state
 
         map = self.map
+        state = self.encoder.encode(map)
+
         positions = {}
+        new_positions = {}
+        character_moves = {}
 
         for c_key in self.c_reg:
+            # Save agent current position
             character = self.c_reg[c_key]
             agent = character["agent"]
             pos = character["position"]
-            move = agent.get_move(map, pos)
-            move_id = tuple(move)
-            if move_id in positions.keys():
-                positions[move_id].append(c_key)
-            else:
-                positions[move_id] = [c_key]
+            positions[c_key] = pos
 
-        self.update_map(positions)
+            # Get move from agent and save the move and position
+            move = agent.get_move(map, pos)
+            character_moves[c_key] = (move)
+
+            move_id = tuple(move)
+            if move_id in new_positions.keys():
+                new_positions[move_id].append(c_key)
+            else:
+                new_positions[move_id] = [c_key]
+
+        self.update_map(new_positions)
         self.i_manager.set_reg(self.c_reg)
 
-        s = self.encode(self.map)
-        self.state = s
+        next_state = self.encoder.encode(self.map)
+        self.state = next_state
 
         # End game when game is over
         self.play_status = self.check_game_rules() # Return False if game is over
 
-        # Give rewards to each agent
+        # Give rewards to and update each agent
         points = self.get_rewards()
 
         for c_key in self.c_reg:
             character = self.c_reg[c_key]
+            state = (map, positions[c_key])
+            move = character_moves[c_key]
+
             agent = character["agent"]
-            point = points[c_key] if c_key in points.keys() else 0
-            agent.step(s, point, not self.play_status, None)
+            reward = points[c_key] if c_key in points.keys() else 0
+            # penalize agent for game ending with no points
+            if agent.type == "h" and reward == 0 and not self.play_status:
+                point = -5
+
+            next_state = (self.map, character["position"])
+            agent.step(state, move, next_state, reward)
 
         self.current_step += 1
 
-        return s
+        return next_state
 
     def render(self, printToScreen=True):
         curr_pos = (0, 0)
@@ -181,14 +177,7 @@ class StaghuntEnv(Env):
             for space in row:
                 s = ''
                 if space == 0:
-                    x_border = (curr_pos[0] == self.x_bounds[0] - 1 or curr_pos[0] == self.x_bounds[1] + 1)
-                    y_border = (curr_pos[1] == self.y_bounds[0] - 1 or curr_pos[1] == self.y_bounds[1] + 1)
-                    if x_border and y_border:
-                        s = '+'
-                    elif x_border:
-                        s = '|'
-                    elif y_border:
-                        s = '-'
+                    s = Back.BLACK + '0'+ Style.RESET_ALL
                 elif space == 1:
                     s = ' '
                 elif self.in_reg(self.encoder.decode_id(space)):
@@ -200,7 +189,7 @@ class StaghuntEnv(Env):
                         "h": Back.CYAN,
                         "s": Back.GREEN,
                         "o": Back.WHITE, # open space
-                        "i": Back.MAGENTA # Interaction
+                        "i": Back.MAGENTA # interaction
                     }
 
                     color = colors["o"]
@@ -218,7 +207,6 @@ class StaghuntEnv(Env):
                 output += s
                 curr_pos = (curr_pos[0] + 1, curr_pos[1])
             curr_pos = (curr_pos[0], curr_pos[1] + 1)
-            # print(output)
             export += output + '\n'
         if printToScreen:
             print(export)
@@ -235,34 +223,10 @@ class StaghuntEnv(Env):
                 return False
         return True
 
-    def encode_simple(self, map):
-        return str(map)
-
-    def decode_simple(self, map):
-        return np.matrix(map)
-
     def get_character_positions(self):
         character_pos = []
         for c_key in self.characters_registry.keys():
             character_pos.append()
-
-    def encode(self, state_map):
-        index = "{}{}".format(len(state_map), len(state_map[0]))
-        for i in range(len(state_map)):
-            for j in range(len(state_map[0])):
-                space = state_map[i][j]
-                index += str(space)
-        return index
-
-    def decode(self, encoded_state):
-        m = str(encoded_state[0])
-        n = str(encoded_state[1])
-        map = self.create_map(m, n)
-
-        for i in range(m):
-            for j in range(n):
-                map[i][j] = int(encoded_state[i*n + j])
-        return index_arr
 
     # Map Methods
 
@@ -339,7 +303,6 @@ class StaghuntEnv(Env):
 
     def add_agent(self, agent):
         if agent.id in self.c_reg.keys():
-            # print("Adding {} agent to character registry: {}".format(agent.id, self.c_reg))
             self.update_agent(agent.id, agent)
         else:
             print("E: Character ({}) was not found in character registry.".format(a_key))
@@ -372,7 +335,6 @@ class StaghuntEnv(Env):
 
     def check_game_rules(self):
         if self.current_step >= self.MAX_STEP:
-            print("Ran out of time.")
             return False
 
         groups = self.i_manager.get_interactions()
@@ -385,7 +347,9 @@ class StaghuntEnv(Env):
 
     def validate_character_position(self, position):
         x, y = position
-        return (self.x_bounds[0] <= x <= self.x_bounds[1]) and (self.y_bounds[0] <= y <= self.y_bounds[1])
+        within_bounds = (self.x_bounds[0] <= x <= self.x_bounds[1]) and (self.y_bounds[0] <= y <= self.y_bounds[1])
+        open_space = (self.map[y][x] != 0)
+        return within_bounds and open_space
 
     def equivalent_positions(self, c1, c2):
         return (c1[0] == c2[0] and c1[1] == c2[1])
