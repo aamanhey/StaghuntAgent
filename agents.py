@@ -187,6 +187,7 @@ class QLearningAgent(BasicHunterAgent):
         self.epsilon = float(epsilon)
         self.gamma = float(gamma)
 
+        self.use_delta = False
         self.delta = float(delta)
         self.hasConverged = False
         self.deltas = []
@@ -207,6 +208,8 @@ class QLearningAgent(BasicHunterAgent):
         return params
 
     # Convergence Methods
+    def set_use_delta(self, val):
+        self.use_delta = val
 
     def get_delta_avg(self):
         return np.average(self.deltas)

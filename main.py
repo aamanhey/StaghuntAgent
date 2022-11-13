@@ -5,10 +5,11 @@ import pickle
 import pprint
 import numpy as np
 import beepy as beep
+from setup import *
 from prettytable import PrettyTable
 from environment import StaghuntEnv
 from multiprocessing.pool import Pool
-from agents import TABLE_AGENTS, ManualAgent, BruteForceAgent, QLearningAgent
+from agents import TABLE_AGENTS, ManualAgent, BruteForceAgent, QLearningAgent, ApprxQLearningAgent
 
 ''' Setup '''
 
@@ -94,7 +95,7 @@ def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, saveTable=False,
         "percent_conv": 0.2,
     }
 
-    hasTable = (agent.model in TABLE_AGENTS)
+    hasTable = (agent.model in TABLE_AGENTS) and agent.use_delta
 
     if hasTable:
         metrics.update(table_metrics)
@@ -199,16 +200,16 @@ def test_saved_table(test_env, agent, num_epochs=10, showMap=True, saveFrames=Fa
         print("E: No table of id {} found.".format(tableId))
 
 ''' End-to-End '''
-def train_and_test_agent(env, agent, num_train_epochs=None, num_test_epochs=10, percent_conv=0.2, showMetrics=True, saveMetrics=True):
+def train_and_test_agent(env, agent, num_train_epochs=None, num_test_epochs=10, percent_conv=0.2, showMetrics=True, saveMetrics=True, showMap=False):
     # Train Agent
     if num_train_epochs is None:
         num_train_epochs = 100 * (10**len(env.c_reg)) + 1
 
     hasTable = (agent.type in TABLE_AGENTS)
-    training_metrics = train_agent(env, agent, num_epochs=num_train_epochs, percent_conv=percent_conv, saveTable=hasTable)
+    training_metrics = train_agent(env, agent, num_epochs=num_train_epochs, percent_conv=percent_conv, saveTable=hasTable, showMap=showMap)
 
     # Test Agent
-    testing_metrics = test_agent(env, agent, num_test_epochs, showMap=False, saveFrames=True)
+    testing_metrics = test_agent(env, agent, num_test_epochs, showMap=showMap, saveFrames=True)
 
     # Compute Training Metrics
     training_attrs = ["epochs", "rewards"]
@@ -234,7 +235,8 @@ def train_and_test_agent(env, agent, num_train_epochs=None, num_test_epochs=10, 
             display_metrics(crit_metrics, training_attrs)
         else:
             training_attrs.insert(0, "episode")
-            training_metrics["episode"] = range(1, len(training_metrics["epochs"]))
+            training_metrics["episode"] = range(1, len(training_metrics["epochs"]) + 1)
+            k = len(training_metrics["episode"]) // 10
             display_metrics(training_metrics, training_attrs, k)
         print("Testing Metrics:")
         display_metrics(testing_metrics, testing_attrs)
@@ -406,6 +408,10 @@ def find_optimal_params(character_setup, map_length, map, precision):
         pickle.dump(optimal_metrics, fp)
 
 ''' Utils '''
+def get_map_length(map):
+    if len(map) > len(map[0]):
+        return len(map)
+    return len(map[0])
 
 def get_folder_size(folder):
     dir_path = folder
@@ -462,35 +468,23 @@ def print_frames(frames_dict, fps=1, clear=False):
 def main():
     os.system('clear')
 
-    character_setup_simple = {
-        "r1": {"position": (1, 1)},
-        "h1": {"position": (2, 2)}
-    }
-
-    custom_map = np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
-                           [0, 0, 1, 1, 1, 0, 1, 0, 0],
-                           [0, 0, 1, 0, 0, 0, 1, 0, 0],
-                           [0, 1, 1, 1, 1, 0, 1, 1, 0],
-                           [0, 0, 1, 0, 1, 0, 1, 0, 0],
-                           [0, 0, 1, 1, 1, 1, 1, 0, 0],
-                           [0, 0, 0, 0, 0, 0, 0, 0, 0]])
+    character_setup = character_setup_simple
+    map = custom_map
 
     # Setup Values
-    map_length = 9
+    map_length = get_map_length(map)
     alpha = 0.1
     epsilon = 0.5
     gamma = 0.8
     delta = 0.001
 
-    character_setup = character_setup_simple
     num_epochs = 100 * (10**len(character_setup)) + 1
-    percent_conv = 0.2 # the percentage of episodes with deltas below bound
 
     # Initialize Agent
     agent = QLearningAgent("h1", alpha, epsilon, gamma, delta)
     env = create_env(map_length, character_setup, agent, custom_map)
 
-    metrics = train_and_test_agent(env, agent)
+    metrics = train_and_test_agent(env, agent, num_train_epochs=num_epochs, showMap=True)
 
 if __name__ == '__main__':
     main()

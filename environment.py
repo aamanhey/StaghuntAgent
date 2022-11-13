@@ -86,11 +86,6 @@ class StaghuntEnv(Env):
         self.window_shape = (500, 500, 3)
         self.canvas = np.ones(self.window_shape) * 1
 
-        # Gameplay
-        self.action_space = spaces.Discrete(self.NUM_ACTIONS) # 0, 1, 2, 3
-        d = self.MAP_DIMENSION
-        self.observation_space = spaces.Box(low=0, high=d, shape=(d, d), dtype=np.int16)
-
     ''' Environment Methods '''
     def reset(self):
         self.play_status = True
