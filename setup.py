@@ -1,3 +1,5 @@
+import numpy as np
+
 character_setup_full = {
     "r1": (1, 1),
     "r2": (1, 1),

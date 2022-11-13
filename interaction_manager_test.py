@@ -6,6 +6,7 @@ import unittest
 c_reg = {}
 im = InteractionManager(c_reg)
 
+'''
 Use 'python -m unittest interaction_manager_test.TestInteractionManager.<Test Name>'
 to run a specific test from this file.
 '''
