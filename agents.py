@@ -37,7 +37,7 @@ class StaticAgent:
         # dir represents direction as a number from 0 to 3, N to W
         dir = [[0, -1], [1, 0], [0, 1], [-1, 0]]
         a, b = np.add(pos, dir[dir_indx])
-        return [a, b]
+        return tuple([a, b])
 
     def generate_valid_moves(self, pos):
         moves = []
@@ -45,13 +45,13 @@ class StaticAgent:
         for i in range(4):
             a, b = np.add(pos, dir[i])
             if self.validate_agent_position(a, b):
-                moves.append([a, b])
+                moves.append(tuple([a, b]))
         return moves
 
     # Overriden Methods
-    def get_move(self, map, pos):
-        self.map = map.copy()
-        return pos
+    def get_move(self, state):
+        self.map = state.map.copy()
+        return state.positions[self.id]
 
 class RandomAgent(StaticAgent):
     def __init__(self, id):
@@ -61,8 +61,9 @@ class RandomAgent(StaticAgent):
          moves = self.generate_valid_moves(pos)
          return random.choice(moves)
 
-    def get_move(self, map, pos):
-        self.map = map.copy()
+    def get_move(self, state):
+        pos = state.positions[self.id]
+        self.map = state.map.copy()
         return self.get_rand_move(pos)
 
 class StaghuntAgent(RandomAgent):
@@ -85,13 +86,14 @@ class StaghuntAgent(RandomAgent):
     def reset(self):
         self.reward = 0
 
-    def get_move(self, map, pos):
-        self.map = map.copy()
+    def get_move(self, state):
+        pos = state.positions[self.id]
+        self.map = state.map.copy()
         if self.kind != self.kinds["static-prey"]:
             return self.get_rand_move(pos)
         return pos
 
-    def step(self, state, move, next_state, reward):
+    def step(self, state, action, next_state, reward):
         # Update agent logic
         final_reward = reward
         if reward == 0 and self.type == "h":
@@ -112,10 +114,11 @@ class ManualAgent(StaghuntAgent):
             "W": 3
         }
         if user_input.capitalize() not in index_dict.keys():
-            return [0, 0]
+            return tuple([0, 0])
         index = index_dict[user_input.capitalize()]
-        move = np.add(pos, dir[index])
-        return move
+        moves = np.add(pos, dir[index])
+        actions = [tuple(x) for x in moves]
+        return actions
 
     def contains_pos(self, sub_arr, arr):
         for element in arr:
@@ -123,8 +126,9 @@ class ManualAgent(StaghuntAgent):
                 return True
         return False
 
-    def get_move(self, map, pos):
-        self.map = map.copy()
+    def get_move(self, state):
+        pos = state.positions[self.id]
+        self.map = state.map.copy()
         moves = self.generate_valid_moves(pos)
         move = []
         prompt = 'Input direction (NESW) for {}:'.format(self.id)
@@ -145,8 +149,9 @@ class PreyAgent(StaghuntAgent):
     def __init__(self, id, type, predator_type="h"):
         StaghuntAgent.__init__(self, id, type, kind="prey")
 
-    def get_move(self, map, pos):
-        self.map = map.copy()
+    def get_move(self, state):
+        pos = state.positions[self.id]
+        self.map = state.map.copy()
         moves = self.generate_valid_rand_moves()
         optimal_moves = []
         for move in moves:
@@ -169,8 +174,9 @@ class BruteForceAgent(BasicHunterAgent):
          moves = self.generate_valid_moves(pos)
          return random.choice(moves)
 
-    def get_move(self, map, pos):
-        self.map = map.copy()
+    def get_move(self, state):
+        pos = state.positions[self.id]
+        self.map = state.map.copy()
         return self.get_rand_move(pos)
 
 class QLearningAgent(BasicHunterAgent):
@@ -287,7 +293,9 @@ class QLearningAgent(BasicHunterAgent):
 
     def calc_max_value(self, state):
         # Gives max Q-Value of possible moves at a state, equating the value of that state
-        map, pos = state
+        map = state.map
+        pos = state.positions[self.id]
+
         max_val = -999999
         moves = self.generate_valid_moves(pos)
         for move in moves:
@@ -296,9 +304,8 @@ class QLearningAgent(BasicHunterAgent):
                 max_val = q_val
         return max_val
 
-    def calc_optimal_move(self, state):
+    def calc_optimal_move(self, map, pos):
         # Gives optimal move at a state
-        map, pos = state
         max_val = -999999
         moves = self.generate_valid_moves(pos)
         optimal_moves = []
@@ -311,21 +318,24 @@ class QLearningAgent(BasicHunterAgent):
                 optimal_moves.append(move)
         return random.choice(optimal_moves)
 
-    def get_move(self, map, pos):
+    def get_move(self, state):
         # Gives move based on Q-Value
-        self.map = map.copy()
+        pos = state.positions[self.id]
+        self.map = state.map.copy()
         moves = self.generate_valid_moves(pos)
 
         if random.uniform(0, 1) < self.epsilon and self.inTraining:
             move = random.choice(moves)
         else:
-            move = self.calc_optimal_move((map, pos))
+            move = self.calc_optimal_move(state.map, pos)
 
         return move
 
-    def step(self, state, move, next_state, reward):
+    def step(self, state, action, next_state, reward):
         # Update agent logic
-        map, pos = state
+        map = state.map
+        pos = state.positions[self.id]
+
         final_reward = reward
         if reward == 0 and self.type == "h":
             final_reward = -1
@@ -333,18 +343,17 @@ class QLearningAgent(BasicHunterAgent):
         if self.inTraining:
             feedback = final_reward + self.gamma * self.calc_max_value(next_state)
             map_id = self.encoder.encode(map)
-            move_id = tuple(move)
-            self.init_q(map_id, move_id)
+            self.init_q(map_id, action)
 
             # Update convergence metrics
-            old_q_val = self.q_value[map_id][move_id]
-            new_q_val = (1.0 - self.alpha) * self.get_q_value(map, move) + self.alpha * feedback
+            old_q_val = self.q_value[map_id][action]
+            new_q_val = (1.0 - self.alpha) * self.get_q_value(map, action) + self.alpha * feedback
             delta = self.calc_delta(new_q_val, old_q_val)
             self.deltas.append(round(delta, len(str(delta)) - 1))
             if np.average(self.deltas) < self.delta:
                 self.hasConverged = True
 
-            self.q_value[map_id][move_id] = new_q_val
+            self.q_value[map_id][action] = new_q_val
 
         self.reward += final_reward
 

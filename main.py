@@ -63,7 +63,7 @@ def brute_force():
     subject = env.get_subject()
     agent = subject["agent"]
     r = agent.reward
-    agent.reset()
+    #agent.reset()
 
     k = 10
     t_steps, t_reward = train_k_eps(env, k)
@@ -129,7 +129,7 @@ def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, saveTable=False,
             metrics["deltas"].append(delta_i)
 
         # reset agent's reward and convergence vars
-        agent.reset()
+        #agent.reset()
         i += 1
 
     print("Finished training.")
@@ -484,7 +484,7 @@ def main():
     agent = QLearningAgent("h1", alpha, epsilon, gamma, delta)
     env = create_env(map_length, character_setup, agent, custom_map)
 
-    metrics = train_and_test_agent(env, agent, num_train_epochs=num_epochs, showMap=True)
+    metrics = train_and_test_agent(env, agent, num_train_epochs=num_epochs, saveMetrics=False, showMap=True)
 
 if __name__ == '__main__':
     main()
