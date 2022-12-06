@@ -170,7 +170,7 @@ class PreyAgent(StaghuntAgent):
         return curr_pos
 
 class BasicHunterAgent(StaghuntAgent):
-    # Blue agent inspired by Project Malmo
+    # Agent inspired by Project Malmo's Blue Agent
     def __init__(self, id):
         StaghuntAgent.__init__(self, id, "h")
         self.kind = self.kinds["general-hunter"]

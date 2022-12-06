@@ -14,7 +14,7 @@ from environment import StaghuntEnv
 from feature_extractor import StaghuntExtractor
 from interaction_manager import RABBIT_VALUE, STAG_VALUE
 from agents import TABLE_AGENTS, ManualAgent, BruteForceAgent
-from setup import MAX_GAME_LENGTH, character_setup, maps, map_init
+from setup import MAX_GAME_LENGTH, maps, map_init, setup_init
 from rl_agents import QLearningAgent, ApprxQLearningAgent, ApprxReinforcementAgent
 
 matplotlib.use('tkagg')
@@ -546,9 +546,7 @@ def print_frames(frames_dict, fps=1, clear=False):
 def main():
     os.system('clear')
 
-    setup = character_setup["character_setup_2h1r1s"]
-    setup["h2"]["agent"] = BruteForceAgent("h2")
-    map = maps["shum_map_A"]
+    setup, map = setup_init("character_setup_2h1r1s", BruteForceAgent("h2"), "shum_map_A")
 
     # Setup Values
     map_length = get_map_length(map)
