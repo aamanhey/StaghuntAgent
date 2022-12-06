@@ -8,13 +8,16 @@ import numpy as np
 import beepy as beep
 import matplotlib.pyplot as plt
 
+from state import State
 from os.path import exists
 from colorama import Fore, Back, Style
 from IPython.display import clear_output
 
 # Staghunt Libraries
+from registry import Registry
+from setup import MAX_GAME_LENGTH
 from encoder import StaghuntEncoder
-from agents import BasicHunterAgent, StaghuntAgent
+from agents import PreyAgent, BasicHunterAgent, StaghuntAgent
 from interaction_manager import InteractionManager, RABBIT_VALUE, STAG_VALUE
 
 '''
@@ -28,8 +31,8 @@ CLEAR_SCREEN = '\033[2J'
 RED = '\033[31m'   # mode 31 = red forground
 RESET = '\033[0m'  # mode 0  = reset
 
-class StaghuntEnv(Env):
-    def __init__(self, map_dim=7, game_length=30, characters={}, map=None):
+class StaghuntEnv():
+    def __init__(self, map_dim=7, game_length=MAX_GAME_LENGTH, characters={}, map=None):
         # Setup/Meta-data
         self.NUM_ACTIONS = 4
         self.MAP_DIMENSION = map_dim
@@ -66,21 +69,21 @@ class StaghuntEnv(Env):
                         characters[character]["agent"] = StaghuntAgent(character, type, kind="static-prey")
                     elif type == "s":
                         # @TODO: Change kind to mobile
-                        characters[character]["agent"] = StaghuntAgent(character, type, kind="static-prey")
+                        characters[character]["agent"] = PreyAgent(character, type)
                     else:
                         characters[character]["agent"] = BasicHunterAgent(character)
-            self.c_reg = characters
+            self.c_reg = Registry(characters)
             self.subject = self.set_random_subject() # the subject is going to act as a main player
         elif len(characters > 8):
             print("E: Environment cannot handle more than 8 characters.")
         else:
             print("E: No characters give, initializing Basic Hunter.")
             basic_hunter = {"agent": BasicHunterAgent("h1"), "position": (0, 0)}
-            self.c_reg = {"h1": basic_hunter}
+            self.c_reg = Registry({"h1": basic_hunter})
             self.subject = "h1"
 
         # Declare an interaction manager to handle logic of when characters interact
-        self.i_manager = InteractionManager(self.c_reg)
+        self.i_manager = InteractionManager(self.c_reg.get_characters())
 
         # Display
         self.window_shape = (500, 500, 3)
@@ -96,9 +99,7 @@ class StaghuntEnv(Env):
 
         # Move characters to random positions
         self.set_random_characters()
-
-        # Put elements on the canvas
-        self.create_canvas()
+        self.c_reg.reset_rewards()
 
         self.state = self.encoder.encode(self.map)
 
@@ -110,34 +111,35 @@ class StaghuntEnv(Env):
             return self.state
 
         map = self.map
-        state = self.encoder.encode(map)
+        state_id = self.encoder.encode(map)
 
-        positions = {}
         new_positions = {}
-        character_moves = {}
+        actions = {}
 
-        for c_key in self.c_reg:
-            # Save agent current position
-            character = self.c_reg[c_key]
-            agent = character["agent"]
-            pos = character["position"]
-            positions[c_key] = pos
+        reg = self.c_reg
+        characters = reg.get_characters()
+        positions = reg.get_positions()
 
+        state = State(state_id, map, positions, self.current_step, positions[self.subject])
+
+        for id in reg.get_ids():
             # Get move from agent and save the move and position
-            move = agent.get_move(map, pos)
-            character_moves[c_key] = (move)
+            agent = reg.get_agent(id)
+            action = agent.get_move(state)
+            actions[id] = action
 
-            move_id = tuple(move)
-            if move_id in new_positions.keys():
-                new_positions[move_id].append(c_key)
+            if action in new_positions.keys():
+                new_positions[action].append(id)
             else:
-                new_positions[move_id] = [c_key]
+                new_positions[action] = [id]
 
+        # Update map and character registry
         self.update_map(new_positions)
-        self.i_manager.set_reg(self.c_reg)
+        new_reg = self.c_reg
+        self.i_manager.set_reg(new_reg.get_characters())
 
-        next_state = self.encoder.encode(self.map)
-        self.state = next_state
+        next_state_id = self.encoder.encode(self.map)
+        self.state = next_state_id
 
         # End game when game is over
         self.play_status = self.check_game_rules() # Return False if game is over
@@ -145,23 +147,21 @@ class StaghuntEnv(Env):
         # Give rewards to and update each agent
         points = self.get_rewards()
 
-        for c_key in self.c_reg:
-            character = self.c_reg[c_key]
-            state = (map, positions[c_key])
-            move = character_moves[c_key]
+        next_state = State(next_state_id, self.map, new_reg.get_positions(), self.current_step + 1, new_reg.get_position(self.subject))
 
-            agent = character["agent"]
-            reward = points[c_key] if c_key in points.keys() else 0
+        for id in new_reg.get_ids():
+            agent = new_reg.get_agent(id)
+            action = actions[id]
+            reward = points[id] if id in points.keys() else 0
             # penalize agent for game ending with no points
             if agent.type == "h" and reward == 0 and not self.play_status:
                 point = -5
 
-            next_state = (self.map, character["position"])
-            agent.step(state, move, next_state, reward)
+            agent.step(state, action, next_state, reward)
 
         self.current_step += 1
 
-        return next_state
+        return next_state_id
 
     def render(self, printToScreen=True):
         curr_pos = (0, 0)
@@ -175,7 +175,7 @@ class StaghuntEnv(Env):
                     s = Back.BLACK + '0'+ Style.RESET_ALL
                 elif space == 1:
                     s = ' '
-                elif self.in_reg(self.encoder.decode_id(space)):
+                elif self.c_reg.in_reg(self.encoder.decode_id(space)):
                     characters = self.encoder.decode_id(space)
                     types = self.encoder.decode_type(space)
 
@@ -194,7 +194,7 @@ class StaghuntEnv(Env):
                         character = characters[0]
                         color = colors[types[0]]
                         num = character[1]
-                        id = "P" if (num == self.subject) else character[0]
+                        id = chr(0x00000124) if (character == self.subject) else character[0] # Ĥ if subject
                     else:
                         color = colors["i"]
 
@@ -210,13 +210,6 @@ class StaghuntEnv(Env):
     ''' Util Functions '''
     def get_status(self):
         return self.play_status
-
-    def in_reg(self, characters):
-        for c in characters:
-            if c not in self.c_reg:
-                print("E: {} found in map but not in character registry.".format(c))
-                return False
-        return True
 
     def get_character_positions(self):
         character_pos = []
@@ -279,26 +272,33 @@ class StaghuntEnv(Env):
             id = self.encoder.encode_id(positions[pos])
             self.map[y][x] = id
             for c_id in positions[pos]:
-                self.c_reg[c_id]["position"] = pos
+                self.c_reg.update_character(c_id, pos)
 
     # Agent Modification Methods
 
     def set_random_subject(self):
-        keys = self.c_reg.keys()
-        self.subject = random.choice(list(keys))
+        ids = self.c_reg.get_ids()
+        self.subject = random.choice(list(ids))
 
     def set_subject(self, id):
-        if id in self.c_reg.keys():
+        if id in self.c_reg.get_ids():
             self.subject = id
         else:
             print("E: Was not given valid id for main agent.")
 
     def get_subject(self):
-        return self.c_reg[self.subject]
+        return self.c_reg.get_character(self.subject)
+
+    def query_subject(self):
+        subject = self.c_reg.get_character(self.subject)
+        state_id = self.encoder.encode(self.map)
+        positions = self.c_reg.get_positions()
+        state = State(state_id, self.map, positions, self.current_step, subject['position'])
+        return subject['agent'].calc_optimal_moves(state)
 
     def add_agent(self, agent):
-        if agent.id in self.c_reg.keys():
-            self.update_agent(agent.id, agent)
+        if agent.id in self.c_reg.get_ids():
+            self.c_reg.update_character(agent.id, agent, "agent")
         else:
             print("E: Character ({}) was not found in character registry.".format(a_key))
 
@@ -306,9 +306,6 @@ class StaghuntEnv(Env):
         for a_key in agents.keys():
             agent = agents[a_kay]
             self.add_agent(agent)
-
-    def update_agent(self, character_id, agent):
-        self.c_reg[character_id]["agent"] = agent
 
     # Game Logic Methods
     def get_rewards(self):
@@ -360,26 +357,35 @@ class StaghuntEnv(Env):
         pos = [-1, -1]
         for i in range(2):
             pos[i] = self.get_rand_bdd_number(bounds[i])
-        return pos
+        return tuple(pos)
 
     def rand_bdd_position(self):
         # Return a pair of random integers bounded by the x and y bounds
         bounds = [self.x_bounds, self.y_bounds]
         x, y = self.rand_bdd_pair(bounds)
-        while self.map[y][x] != 1:
+        while self.map[y][x] == 0: # != 0, allows characters to be at the same position
             x, y = self.rand_bdd_pair(bounds)
-        return (x, y)
+        return tuple((x, y))
 
     def set_random_characters(self):
-        # @TODO: Get grouping in case characters are at same position at start
-        for character in self.c_reg.keys():
+        positions = {}
+        for id in self.c_reg.get_ids():
             # Encode character into a numerical ID
-            id = self.encoder.encode_id([character]) # assuming space is empty
-            x, y = self.rand_bdd_position()
-            self.map[y][x] = id
+            pos = self.rand_bdd_position()
+            if pos in positions.keys():
+                positions[pos].append(id)
+            else:
+                positions[pos] = [id]
             # Update position of character in registry
-            self.c_reg[character]["position"] = (x, y)
-        self.i_manager.set_reg(self.c_reg)
+            self.c_reg.update_character(id, pos)
+        for pos in positions.keys():
+            # Encode character into a numerical ID
+            x, y = pos
+            ids = positions[pos]
+            encoded_id = self.encoder.encode_id(ids)
+            self.map[y][x] = encoded_id
+
+        self.i_manager.set_reg(self.c_reg.get_characters())
 
     # Display Methods
 

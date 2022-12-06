@@ -1,15 +1,29 @@
 import os
 import sys
 import time
+import math
 import pickle
 import pprint
 import numpy as np
 import beepy as beep
+import matplotlib
+
 from setup import *
+from configs import *
 from prettytable import PrettyTable
 from environment import StaghuntEnv
 from multiprocessing.pool import Pool
-from agents import TABLE_AGENTS, ManualAgent, BruteForceAgent, QLearningAgent, ApprxQLearningAgent
+from feature_extractor import StaghuntExtractor
+from interaction_manager import RABBIT_VALUE, STAG_VALUE
+from agents import TABLE_AGENTS, ManualAgent, BruteForceAgent
+from rl_agents import QLearningAgent, ApprxQLearningAgent, ApprxReinforcementAgent
+
+matplotlib.use('tkagg')
+plt = matplotlib.pyplot
+
+'''
+Camel case variables represent config vars.
+'''
 
 ''' Setup '''
 
@@ -63,7 +77,7 @@ def brute_force():
     subject = env.get_subject()
     agent = subject["agent"]
     r = agent.reward
-    agent.reset()
+    #agent.reset()
 
     k = 10
     t_steps, t_reward = train_k_eps(env, k)
@@ -74,12 +88,15 @@ def brute_force():
         print("{}: {} {}".format(i, t_steps[i], t_reward[i]))
 
 ''' Training '''
+def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, config=train_agent_config):
+    config = validate_config(config, train_agent_config)
 
-def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, saveTable=False, tableId=None, showMap=False):
     # Training Environment for Agent
-    print("------Training Q-Learning Agent------")
+    print("------Training {}------".format(agent.get_name()))
     print("Training on {} epochs.".format(num_epochs))
     agent.toggleTraining(True)
+
+    start_time = time.time()
 
     # training metrics
     metrics = {
@@ -95,23 +112,28 @@ def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, saveTable=False,
         "percent_conv": 0.2,
     }
 
-    hasTable = (agent.model in TABLE_AGENTS) and agent.use_delta
+    hasTable = (agent.get_name() in TABLE_AGENTS) and agent.use_delta
 
     if hasTable:
         metrics.update(table_metrics)
 
-    i = 0
+    episode = 0
 
     num_deltas_achieved = 0
     delta_percent = round(num_epochs * percent_conv) if hasTable else 1
 
-    while (i < num_epochs) and (num_deltas_achieved < delta_percent):
-        progress(i, num_epochs)
+    # Shows average rewards and epochs as a graph in realtime
+    if config["showMetrics"]:
+        indices = []
+        avg_r = []
+        avg_e = []
+        figure, line1, line2 = create_metric_plot(num_epochs, agent.get_name())
+
+    while (episode < num_epochs) and (num_deltas_achieved < delta_percent):
+        progress(episode, num_epochs, int(time.time() - start_time))
         state = env.reset()
+
         while env.get_status():
-            # @TODO: Show current map during training
-            if showMap:
-                str = env.render(printToScreen=False)
             env.step()
 
         subject = env.get_subject()
@@ -121,6 +143,26 @@ def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, saveTable=False,
         metrics["epochs"].append(env.current_step)
         metrics["rewards"].append(agent.reward)
 
+        # @TODO: Stop training when the epochs and rewards stops changing
+
+        # updating plot values
+        if config["showMetrics"]:
+            # @TODO: Add funtion to update metrics
+            # update_metrics(episode, num_epochs, metrics, ["rewards", "epochs"])
+            indices.append(episode)
+            avg_r.append(np.average(metrics["rewards"]))
+            avg_e.append(np.average(metrics["epochs"]))
+            k = num_epochs // 100 if num_epochs > 100 else 1
+            if episode % k == 0:
+                line1.set_xdata(indices[::k])
+                line1.set_ydata(avg_r[::k])
+
+                line2.set_xdata(indices[::k])
+                line2.set_ydata(avg_e[::k])
+
+                figure.canvas.draw()
+                figure.canvas.flush_events()
+
         if hasTable:
             delta_i = agent.get_delta_avg()
             delta = metrics["params"]["delta"]
@@ -128,30 +170,38 @@ def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, saveTable=False,
                 num_deltas_achieved += 1
             metrics["deltas"].append(delta_i)
 
-        # reset agent's reward and convergence vars
-        agent.reset()
-        i += 1
+        episode += 1
 
+    if config["saveIntermMetrics"]:
+        plt_id = get_folder_size('./plots')
+        plt.savefig('plots/interm-metrics-{}.png'.format(plt_id))
+        plt.ioff()
+
+    print("Averages were {} epochs and {} rewards.".format(np.average(metrics["epochs"]), np.average(metrics["rewards"])))
     print("Finished training.")
 
     if hasTable:
-        if saveTable:
+        if config["saveTable"]:
             # Save Q-Table, if saveTable
             subject = env.get_subject()
             agent = subject["agent"]
             id = tableId
-            if tableId is None:
+            if config["tableId"] is None:
                 id = get_folder_size('./tables')
             agent.save_q_table(tableId)
 
         metrics["epochs ran"] = i
 
+    metrics["training_time"] = int(time.time() - start_time)
+
     return metrics
 
 ''' Testing '''
+def test_agent(test_env, agent, num_epochs=10, config=test_agent_config):
+    config = validate_config(config, test_agent_config)
 
-def test_agent(test_env, agent, num_epochs=10, showMap=True, saveFrames=False):
-    print("\n------Testing Q-Learning Agent------")
+    # Testing Environment for Agent
+    print("\n------Testing {}------".format(agent.__class__.__name__))
     agent.toggleTraining(False)
 
     # testing metrics
@@ -162,25 +212,25 @@ def test_agent(test_env, agent, num_epochs=10, showMap=True, saveFrames=False):
         "params": agent.get_params()
     }
 
-    if saveFrames:
+    if config["saveFrames"]:
         metrics["frames"] = {}
 
     for i in range(1, num_epochs + 1):
         state = test_env.reset()
         print("\n\nTest {} with starting state {}:".format(i, state))
-        test_env.render(showMap)
+        test_env.render(config["showMap"])
         print("--starting state--")
         while test_env.get_status():
            test_env.step()
-           frame = test_env.render(showMap)
-           if saveFrames:
+           frame = test_env.render(config["showMap"])
+           if config["saveFrames"]:
                test_id = "test {}".format(i)
                frames = metrics["frames"]
                if test_id in frames.keys():
                    frames[test_id].append(frame)
                else:
                    frames[test_id]= [frame]
-           if showMap:
+           if config["showMap"]:
                print("step  : {}".format(test_env.current_step))
                print("reward: {}\n".format(agent.reward))
 
@@ -192,24 +242,30 @@ def test_agent(test_env, agent, num_epochs=10, showMap=True, saveFrames=False):
 
     return metrics
 
-def test_saved_table(test_env, agent, num_epochs=10, showMap=True, saveFrames=False, tableId=None):
+def test_saved_table(test_env, agent, num_epochs=10, config=test_saved_table):
+    config = validate_config(config, test_saved_table)
+
     status = agent.load_q_table(tableId)
     if status:
-        return test_agent(test_env, agent, num_epochs, showMap, saveFrames)
+        return test_agent(test_env, agent, num_epochs, config=config)
     else:
         print("E: No table of id {} found.".format(tableId))
 
 ''' End-to-End '''
-def train_and_test_agent(env, agent, num_train_epochs=None, num_test_epochs=10, percent_conv=0.2, showMetrics=True, saveMetrics=True, showMap=False):
+def train_and_test_agent(env, agent, num_train_epochs=None, num_test_epochs=10, percent_conv=0.2, config=train_and_test_agent_config):
+    config = validate_config(config, train_and_test_agent_config)
+
     # Train Agent
     if num_train_epochs is None:
         num_train_epochs = 100 * (10**len(env.c_reg)) + 1
 
     hasTable = (agent.type in TABLE_AGENTS)
-    training_metrics = train_agent(env, agent, num_epochs=num_train_epochs, percent_conv=percent_conv, saveTable=hasTable, showMap=showMap)
+    config["saveTable"] = hasTable
+    training_metrics = train_agent(env, agent, num_epochs=num_train_epochs, percent_conv=percent_conv, config=config)
 
     # Test Agent
-    testing_metrics = test_agent(env, agent, num_test_epochs, showMap=showMap, saveFrames=True)
+    config["showMap"] = config["showTestMap"]
+    testing_metrics = test_agent(env, agent, num_test_epochs, config=config)
 
     # Compute Training Metrics
     training_attrs = ["epochs", "rewards"]
@@ -229,14 +285,14 @@ def train_and_test_agent(env, agent, num_train_epochs=None, num_test_epochs=10, 
     averages = calculate_avgs(testing_metrics, testing_attrs)
 
     # Display Metrics
-    if showMetrics:
+    if config["showMetrics"]:
         print("Training Metrics:")
         if hasTable:
             display_metrics(crit_metrics, training_attrs)
         else:
             training_attrs.insert(0, "episode")
             training_metrics["episode"] = range(1, len(training_metrics["epochs"]) + 1)
-            k = len(training_metrics["episode"]) // 10
+            k = len(training_metrics["episode"]) // 10 if len(training_metrics["episode"]) >= 10 else 1
             display_metrics(training_metrics, training_attrs, k)
         print("Testing Metrics:")
         display_metrics(testing_metrics, testing_attrs)
@@ -256,7 +312,7 @@ def train_and_test_agent(env, agent, num_train_epochs=None, num_test_epochs=10, 
         }
         metrics.update(table_metrics)
 
-    if saveMetrics:
+    if config["saveMetrics"]:
         id = get_folder_size('./metrics')
         filename = 'metrics/metric-{}'.format(id)
 
@@ -272,6 +328,7 @@ def get_test_metrics(a, e, g, d, n, p, map_length, character_setup, map):
     metrics = train_and_test_agent(env, agent, n, 50, p, False, False).copy()
     return metrics
 
+# @TODO: Fix the grid search function
 def train_and_test_agent_with_params(setup_data):
     character_setup = setup_data["character_setup"]
     map_length = setup_data["map_length"]
@@ -344,7 +401,6 @@ def train_and_test_agent_with_params(setup_data):
     return final_metrics
 
 ''' Evaluation '''
-
 def calc_delta_metrics(metrics):
      # metrics should have num epochs, deltas, and params
      # Find at what epoch a percentage of delta was reached
@@ -408,6 +464,28 @@ def find_optimal_params(character_setup, map_length, map, precision):
         pickle.dump(optimal_metrics, fp)
 
 ''' Utils '''
+def create_metric_plot(num_epochs, agent_name):
+    plt.ion()
+    figure = plt.figure()
+    ax = figure.add_subplot(111)
+    ax.axis('auto')
+    baseline_r = ax.plot(np.arange(num_epochs), np.full(num_epochs, RABBIT_VALUE), '--', color="lightskyblue", label="Rabbit Reward")
+    baseline_s = ax.plot(np.arange(num_epochs), np.full(num_epochs, STAG_VALUE//2), ':', color="lightskyblue", label="Stag Reward")
+    line1, = ax.plot([0], [0], 'b-', label="Rewards")
+    line2, = ax.plot([0], [0], 'r-', label="Epochs")
+
+    leg = plt.legend(loc='upper right')
+
+    plt.xlim([0, num_epochs])
+    plt.ylim([-30, 30])
+
+    plt.title("Avg. Rewards and Epochs for {}".format(agent_name), fontsize=20)
+    plt.xlabel("Episode #")
+    plt.ylabel("Metric Avg.")
+    plt.show(block=False)
+
+    return figure, line1, line2
+
 def get_map_length(map):
     if len(map) > len(map[0]):
         return len(map)
@@ -429,7 +507,10 @@ def progress(count, total, status=''):
     percents = round(100.0 * count / float(total), 1)
     bar = '=' * filled_len + '-' * (bar_len - filled_len)
 
-    sys.stdout.write('[%s] %s%s ...%s\r' % (bar, percents, '%', status))
+    if status != '':
+        status = 'Time Elapsed: ' + str(status) + ' seconds,'
+
+    sys.stdout.write('[%s] %s%s ... %s Episode: %s\r' % (bar, percents, '%', status, count))
     sys.stdout.flush()
 
 def get_prop(list, bound):
@@ -465,26 +546,35 @@ def print_frames(frames_dict, fps=1, clear=False):
                 sys.stdout.flush()
                 time.sleep(fps)
 
+''' Main '''
 def main():
     os.system('clear')
 
-    character_setup = character_setup_simple
-    map = custom_map
+    setups = [character_setup_simple, character_setup_2h1r1s]
+    character_setup = setups[1]
+    maps = [shum_map_A, shum_map_D, shum_map_E, shum_map_F, shum_map_G, shum_map_I]
+    map = maps[0]
 
     # Setup Values
     map_length = get_map_length(map)
     alpha = 0.1
-    epsilon = 0.5
+    epsilon = 0.3
     gamma = 0.8
     delta = 0.001
 
-    num_epochs = 100 * (10**len(character_setup)) + 1
+    num_epochs = 10000 # math.ceil(1000 * (10**len(character_setup)) + 1)
 
     # Initialize Agent
-    agent = QLearningAgent("h1", alpha, epsilon, gamma, delta)
-    env = create_env(map_length, character_setup, agent, custom_map)
+    # agent = QLearningAgent("h1", alpha, epsilon, gamma, delta)
+    agent_id = "h1"
+    agent = ApprxReinforcementAgent(agent_id, alpha, epsilon, gamma, extractor=StaghuntExtractor(agent_id))
 
-    metrics = train_and_test_agent(env, agent, num_train_epochs=num_epochs, showMap=True)
+    env = create_env(map_length, character_setup, agent, map)
+
+    # Agent Training & Metrics
+    metrics = train_and_test_agent(env, agent, num_train_epochs=num_epochs, config=default_metrics_config)
+    agent.print_weights()
+    agent.print_features_info()
 
 if __name__ == '__main__':
     main()
