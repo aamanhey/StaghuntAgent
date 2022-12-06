@@ -1,3 +1,5 @@
+import numpy as np
+
 class Encoder():
     def __init__(self, setupData=[["c"], {"c1": 2}, ["c1"]]):
         self.types = setupData[0]
@@ -46,12 +48,7 @@ class Encoder():
         return np.matrix(map)
 
     def encode(self, state_map):
-        index = "{}{}".format(len(state_map), len(state_map[0]))
-        for i in range(len(state_map)):
-            for j in range(len(state_map[0])):
-                space = state_map[i][j]
-                index += str(space)
-        return index
+        return (f"{len(state_map)}{len(state_map[0])}{''.join(state_map.flatten().astype('str'))}")
 
     def decode(self, encoded_state):
         m = str(encoded_state[0])
@@ -75,6 +72,12 @@ class StaghuntEncoder(Encoder):
             "h1": 6,
             "h2": 7,
             "h3": 8
+        }
+
+        self.type_ids = {
+            "r" : [2, 3],
+            "s" : [4, 5],
+            "h" : [6, 7, 8]
         }
 
         self.alpha_numeric_ids = ["r1", "r2", "s1", "s2", "h1", "h2", "h3"]

@@ -1,12 +1,6 @@
-import math
-import pickle
 import random
-import collections
 import numpy as np
-
-from os.path import exists
 from encoder import StaghuntEncoder
-from interaction_manager import InteractionManager
 
 TABLE_AGENTS = ["QLearningAgent"]
 
@@ -14,6 +8,9 @@ class StaticAgent:
     def __init__(self, id="default"):
         self.id = id
         self.map = None
+
+    def get_name(self):
+        return self.__class__.__name__
 
     def direction_to_vector(self, direction):
         reference_dict = {
@@ -36,14 +33,16 @@ class StaticAgent:
     def calc_move(self, pos, dir_indx):
         # dir represents direction as a number from 0 to 3, N to W
         dir = [[0, -1], [1, 0], [0, 1], [-1, 0]]
-        a, b = np.add(pos, dir[dir_indx])
+        a = pos[0] + dir[i][0]
+        b = pos[1] + dir[i][1]
         return tuple([a, b])
 
     def generate_valid_moves(self, pos):
         moves = []
         dir = [[0, -1], [1, 0], [0, 1], [-1, 0]]
         for i in range(4):
-            a, b = np.add(pos, dir[i])
+            a = pos[0] + dir[i][0]
+            b = pos[1] + dir[i][1]
             if self.validate_agent_position(a, b):
                 moves.append(tuple([a, b]))
         return moves
@@ -82,6 +81,8 @@ class StaghuntAgent(RandomAgent):
         self.kind = self.kinds[kind]
 
         self.reward = 0
+
+        self.encoder = StaghuntEncoder()
 
     def reset(self):
         self.reward = 0
@@ -138,33 +139,116 @@ class ManualAgent(StaghuntAgent):
             prompt = 'Input a valid direction (NESW) for {}:'.format(self.id)
         return move
 
-class BasicHunterAgent(StaghuntAgent):
-    def __init__(self, id):
-        StaghuntAgent.__init__(self, id, "h")
-        self.kind = self.kinds["general-hunter"]
-        self.prey_types = ["r", "s"]
-
 class PreyAgent(StaghuntAgent):
     # Create a class for the stags to run away
     def __init__(self, id, type, predator_type="h"):
         StaghuntAgent.__init__(self, id, type, kind="prey")
+        self.predator_type = predator_type
+        self.reach = 2
+
+    def get_move(self, state):
+        # Prey Policy: Run away from hunters
+        curr_pos = state.positions[self.id]
+        self.map = state.map.copy()
+        moves = self.generate_valid_moves(curr_pos)
+        optimal_moves = []
+        any_hunter_present = False
+        for move in moves:
+            x, y = move
+            hunter_present = False
+            for r in range(self.reach):
+                reach = r * np.subtract(curr_pos, move)
+                hunter_present = hunter_present or self.predator_type in self.encoder.decode_type(self.map[y + reach[1]][x + reach[0]])
+            any_hunter_present = any_hunter_present or hunter_present
+            if not hunter_present:
+                optimal_moves.append(move)
+
+        if len(optimal_moves) > 0: # ∃ position s.t. no hunters are there
+            if any_hunter_present or (not any_hunter_present and random.uniform(0, 1) < 0.6):
+                return random.choice(optimal_moves)
+
+        return curr_pos
+
+class BasicHunterAgent(StaghuntAgent):
+    # Blue agent inspired by Project Malmo
+    def __init__(self, id):
+        StaghuntAgent.__init__(self, id, "h")
+        self.kind = self.kinds["general-hunter"]
+        self.prey_types = ["r", "s"]
+        self.prob_random = 0.25
+        self.prob_target_stag = 0.8
+        self.target = None
+
+    def set_prob_random(self, prob_random):
+        self.prob_random = prob_random
+
+    def reset(self):
+        self.reward = 0
+        if random.uniform(0, 1) < self.prob_random:
+            self.strategy = "random"
+        else:
+            self.strategy = "proximity"
+
+    def get_distances(self, state):
+        # A BFS to calculate distance of hunter to each prey character
+        character_distances = {}
+        src = state.positions[self.id]
+        visited = [tuple(src)]
+        queue = [(src, [src])]
+
+        while queue and len(character_distances.keys()) < len(state.positions.keys()):
+            next_node, path = queue.pop(0)
+            dist = len(path) - 1
+            x, y = next_node
+            ids = self.encoder.decode_id(state.map[y][x])
+            for id in ids:
+                if id not in character_distances.keys() or dist < character_distances[id]:
+                    character_distances[id] = { "dist" : dist, "path" : path }
+
+            neighbors = self.generate_valid_moves(next_node)
+            for nbr in neighbors:
+                node = tuple(nbr)
+                if node not in visited:
+                    new_path = path + [node]
+                    visited.append(node)
+                    queue.append((node, new_path))
+
+        return character_distances
+
+    def calc_proximally_optimal_move(self, state, target_char=None):
+        character_distances = self.get_distances(state)
+        characters = []
+        for c_key in character_distances.keys():
+            if c_key != self.id:
+                character = character_distances[c_key]
+                characters.append(tuple((character["dist"], c_key)))
+        characters.sort()
+
+        for target in [target_char, self.target]:
+            if target is not None and target in character_distances.keys():
+                path = character_distances[target]["path"]
+                return path[1] if len(path) > 1 else path[0]
+
+        while characters:
+            dist, c_id = characters.pop(0)
+            type = c_id[0]
+            path = character_distances[c_id]["path"]
+            move = path[1] if len(path) > 1 else path[0]
+            if type == "r" or (type == "s" and random.uniform(0, 1) >= self.prob_target_stag):
+                return move
+
+        return self.get_rand_move(state.positions[self.id])
 
     def get_move(self, state):
         pos = state.positions[self.id]
         self.map = state.map.copy()
-        moves = self.generate_valid_rand_moves()
-        optimal_moves = []
-        for move in moves:
-            x, y = move
-            # Prey Policy: Stay away from hunters
-            unoccupied = (self.map[y][x] == 1)
-            unoccupied_by_predator = (predator_ids and self.encoder.decode_type(self.map[y][x]) != predator_type)
-            if unoccupied or unoccupied_by_predator:
-                optimal_moves.append(move)
-        if len(optimal_moves) > 0:
-            return random.choice(optimal_moves)
+
+        if self.strategy == "proximity":
+            move = self.calc_proximally_optimal_move(state)
         else:
-            return pos
+            move = self.get_rand_move(state.positions[self.id])
+
+        return move
 
 class BruteForceAgent(BasicHunterAgent):
     def __init__(self, id):
@@ -178,186 +262,3 @@ class BruteForceAgent(BasicHunterAgent):
         pos = state.positions[self.id]
         self.map = state.map.copy()
         return self.get_rand_move(pos)
-
-class QLearningAgent(BasicHunterAgent):
-    def __init__(self, id, alpha=0.1, epsilon=0.5, gamma=0.8, delta=0.001):
-        BasicHunterAgent.__init__(self, id)
-        self.model = 'QLearningAgent'
-        '''
-        alpha    - learning rate
-        epsilon  - exploration rate
-        gamma    - discount factor
-        delta    - convergence factor
-        '''
-        self.alpha = float(alpha)
-        self.epsilon = float(epsilon)
-        self.gamma = float(gamma)
-
-        self.use_delta = False
-        self.delta = float(delta)
-        self.hasConverged = False
-        self.deltas = []
-
-        self.inTraining = False
-
-        self.encoder = StaghuntEncoder()
-
-        self.q_value = {}
-
-    def get_params(self):
-        params = {
-            "aplha"   : self.alpha,
-            "epsilon" : self.epsilon,
-            "gamma"   : self.gamma,
-            "delta"   : self.delta
-        }
-        return params
-
-    # Convergence Methods
-    def set_use_delta(self, val):
-        self.use_delta = val
-
-    def get_delta_avg(self):
-        return np.average(self.deltas)
-
-    def calc_delta(self, q_i, q_j):
-        delta = (q_i - q_j)
-        divisor = q_j
-        if q_i == 0 and q_j == 0:
-            divisor = 1
-        elif q_i != 0 and q_j == 0:
-            divisor = q_i
-        return abs(delta/divisor)
-
-    def save_q_table(self, id=None):
-        filename = 'tables/q-table-{}'.format(id)
-
-        print("Saving table as '{}'".format(filename))
-        with open(filename,'wb') as fp:
-            pickle.dump(self.q_value, fp)
-
-    def load_q_table(self, id=None):
-        filename = 'tables/q-table-{}'.format(id)
-        file_exists = exists(filename)
-        if file_exists:
-            with open(filename,'rb') as fp:
-                self.q_value = pickle.load(fp)
-            return True
-        return False
-
-    # Training Methods
-
-    def reset(self):
-        self.reward = 0
-        self.hasConverged = False
-        self.deltas = []
-
-    def training_complete(self):
-        return self.hasConverged
-
-    def toggleTraining(self, val=None):
-        if val is not None:
-            self.inTraining = val
-        else:
-            self.inTraining = not self.inTraining
-
-    # Q-Value Methods
-    def init_q(self, map_id, move_id):
-        c = False
-        if map_id not in self.q_value.keys():
-            self.q_value[map_id] = {}
-            c = True
-        if move_id not in self.q_value[map_id].keys():
-            self.q_value[map_id][move_id] = 0
-            c = True
-        return c
-
-    def get_q_values(self, state_id):
-        return self.q_value[state_id]
-
-    def get_q_value(self, map, move):
-        map_id = self.encoder.encode(map)
-        move_id = tuple(move)
-        self.init_q(map_id, move_id)
-        return self.q_value[map_id][move_id]
-
-    def print_q_table(self):
-        print("Q-Table for {}:".format(self.id))
-        for state_id in self.q_value.keys():
-            values = self.q_value[state_id]
-            print("{}:".format(state_id))
-            for val in values:
-                print("- {}: {}".format(val, round(self.q_value[state_id][val], 4)))
-
-    # Q-Policy Methods
-
-    def calc_max_value(self, state):
-        # Gives max Q-Value of possible moves at a state, equating the value of that state
-        map = state.map
-        pos = state.positions[self.id]
-
-        max_val = -999999
-        moves = self.generate_valid_moves(pos)
-        for move in moves:
-            q_val = self.get_q_value(map, move)
-            if q_val > max_val:
-                max_val = q_val
-        return max_val
-
-    def calc_optimal_move(self, map, pos):
-        # Gives optimal move at a state
-        max_val = -999999
-        moves = self.generate_valid_moves(pos)
-        optimal_moves = []
-        for move in moves:
-            q_val = self.get_q_value(map, move)
-            if q_val > max_val:
-                max_val = q_val
-                optimal_moves = [move]
-            elif q_val == max_val:
-                optimal_moves.append(move)
-        return random.choice(optimal_moves)
-
-    def get_move(self, state):
-        # Gives move based on Q-Value
-        pos = state.positions[self.id]
-        self.map = state.map.copy()
-        moves = self.generate_valid_moves(pos)
-
-        if random.uniform(0, 1) < self.epsilon and self.inTraining:
-            move = random.choice(moves)
-        else:
-            move = self.calc_optimal_move(state.map, pos)
-
-        return move
-
-    def step(self, state, action, next_state, reward):
-        # Update agent logic
-        map = state.map
-        pos = state.positions[self.id]
-
-        final_reward = reward
-        if reward == 0 and self.type == "h":
-            final_reward = -1
-
-        if self.inTraining:
-            feedback = final_reward + self.gamma * self.calc_max_value(next_state)
-            map_id = self.encoder.encode(map)
-            self.init_q(map_id, action)
-
-            # Update convergence metrics
-            old_q_val = self.q_value[map_id][action]
-            new_q_val = (1.0 - self.alpha) * self.get_q_value(map, action) + self.alpha * feedback
-            delta = self.calc_delta(new_q_val, old_q_val)
-            self.deltas.append(round(delta, len(str(delta)) - 1))
-            if np.average(self.deltas) < self.delta:
-                self.hasConverged = True
-
-            self.q_value[map_id][action] = new_q_val
-
-        self.reward += final_reward
-
-'''
-class ApprxQLearningAgent(StaghuntAgent):
-    # @TODO: Create ApprxQLearningAgent Class
-'''

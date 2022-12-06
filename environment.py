@@ -15,8 +15,9 @@ from IPython.display import clear_output
 
 # Staghunt Libraries
 from registry import Registry
+from setup import MAX_GAME_LENGTH
 from encoder import StaghuntEncoder
-from agents import BasicHunterAgent, StaghuntAgent
+from agents import PreyAgent, BasicHunterAgent, StaghuntAgent
 from interaction_manager import InteractionManager, RABBIT_VALUE, STAG_VALUE
 
 '''
@@ -31,7 +32,7 @@ RED = '\033[31m'   # mode 31 = red forground
 RESET = '\033[0m'  # mode 0  = reset
 
 class StaghuntEnv():
-    def __init__(self, map_dim=7, game_length=30, characters={}, map=None):
+    def __init__(self, map_dim=7, game_length=MAX_GAME_LENGTH, characters={}, map=None):
         # Setup/Meta-data
         self.NUM_ACTIONS = 4
         self.MAP_DIMENSION = map_dim
@@ -68,7 +69,7 @@ class StaghuntEnv():
                         characters[character]["agent"] = StaghuntAgent(character, type, kind="static-prey")
                     elif type == "s":
                         # @TODO: Change kind to mobile
-                        characters[character]["agent"] = StaghuntAgent(character, type, kind="static-prey")
+                        characters[character]["agent"] = PreyAgent(character, type)
                     else:
                         characters[character]["agent"] = BasicHunterAgent(character)
             self.c_reg = Registry(characters)
@@ -99,9 +100,6 @@ class StaghuntEnv():
         # Move characters to random positions
         self.set_random_characters()
         self.c_reg.reset_rewards()
-
-        # Put elements on the canvas
-        self.create_canvas()
 
         self.state = self.encoder.encode(self.map)
 
@@ -196,7 +194,7 @@ class StaghuntEnv():
                         character = characters[0]
                         color = colors[types[0]]
                         num = character[1]
-                        id = "P" if (num == self.subject) else character[0]
+                        id = chr(0x00000124) if (character == self.subject) else character[0] # Ĥ if subject
                     else:
                         color = colors["i"]
 
@@ -291,6 +289,13 @@ class StaghuntEnv():
     def get_subject(self):
         return self.c_reg.get_character(self.subject)
 
+    def query_subject(self):
+        subject = self.c_reg.get_character(self.subject)
+        state_id = self.encoder.encode(self.map)
+        positions = self.c_reg.get_positions()
+        state = State(state_id, self.map, positions, self.current_step, subject['position'])
+        return subject['agent'].calc_optimal_moves(state)
+
     def add_agent(self, agent):
         if agent.id in self.c_reg.get_ids():
             self.c_reg.update_character(agent.id, agent, "agent")
@@ -352,25 +357,34 @@ class StaghuntEnv():
         pos = [-1, -1]
         for i in range(2):
             pos[i] = self.get_rand_bdd_number(bounds[i])
-        return pos
+        return tuple(pos)
 
     def rand_bdd_position(self):
         # Return a pair of random integers bounded by the x and y bounds
         bounds = [self.x_bounds, self.y_bounds]
         x, y = self.rand_bdd_pair(bounds)
-        while self.map[y][x] != 1:
+        while self.map[y][x] == 0: # != 0, allows characters to be at the same position
             x, y = self.rand_bdd_pair(bounds)
-        return (x, y)
+        return tuple((x, y))
 
     def set_random_characters(self):
-        # @TODO: Get grouping in case characters are at same position at start
+        positions = {}
         for id in self.c_reg.get_ids():
             # Encode character into a numerical ID
-            encoded_id = self.encoder.encode_id([id]) # assuming space is empty
-            x, y = self.rand_bdd_position()
-            self.map[y][x] = encoded_id
+            pos = self.rand_bdd_position()
+            if pos in positions.keys():
+                positions[pos].append(id)
+            else:
+                positions[pos] = [id]
             # Update position of character in registry
-            self.c_reg.update_character(id, (x, y))
+            self.c_reg.update_character(id, pos)
+        for pos in positions.keys():
+            # Encode character into a numerical ID
+            x, y = pos
+            ids = positions[pos]
+            encoded_id = self.encoder.encode_id(ids)
+            self.map[y][x] = encoded_id
+
         self.i_manager.set_reg(self.c_reg.get_characters())
 
     # Display Methods

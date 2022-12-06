@@ -3,3 +3,7 @@ __pycache__/
 
 resources/
 .DS_Store
+plots/
+metrics/
+profiles/
+terminal_outputs/
