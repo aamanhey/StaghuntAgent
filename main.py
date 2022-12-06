@@ -146,6 +146,7 @@ def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, config=train_age
         # @TODO: Stop training when the epochs and rewards stops changing
 
         # updating plot values
+        if config["showMetrics"]:
             # @TODO: Add funtion to update metrics
             # update_metrics(episode, num_epochs, metrics, ["rewards", "epochs"])
             indices.append(episode)
