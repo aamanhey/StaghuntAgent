@@ -29,7 +29,6 @@ class State:
         self.pos = pos
 
     def move_character(self, id, position, encoder, set_as_state=False):
-        # @TODO: The positions are not changing
         map = self.map.copy()
         x_old, y_old = self.pos
         x_new , y_new = position
