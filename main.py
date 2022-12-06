@@ -4,18 +4,17 @@ import time
 import math
 import pickle
 import pprint
+import matplotlib
 import numpy as np
 import beepy as beep
-import matplotlib
 
-from setup import *
 from configs import *
 from prettytable import PrettyTable
 from environment import StaghuntEnv
-from multiprocessing.pool import Pool
 from feature_extractor import StaghuntExtractor
 from interaction_manager import RABBIT_VALUE, STAG_VALUE
 from agents import TABLE_AGENTS, ManualAgent, BruteForceAgent
+from setup import MAX_GAME_LENGTH, character_setup, maps, map_init
 from rl_agents import QLearningAgent, ApprxQLearningAgent, ApprxReinforcementAgent
 
 matplotlib.use('tkagg')
@@ -143,12 +142,9 @@ def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, config=train_age
         metrics["epochs"].append(env.current_step)
         metrics["rewards"].append(agent.reward)
 
-        # @TODO: Stop training when the epochs and rewards stops changing
-
         # updating plot values
         if config["showMetrics"]:
             # @TODO: Add funtion to update metrics
-            # update_metrics(episode, num_epochs, metrics, ["rewards", "epochs"])
             indices.append(episode)
             avg_r.append(np.average(metrics["rewards"]))
             avg_e.append(np.average(metrics["epochs"]))
@@ -550,10 +546,9 @@ def print_frames(frames_dict, fps=1, clear=False):
 def main():
     os.system('clear')
 
-    setups = [character_setup_simple, character_setup_2h1r1s]
-    character_setup = setups[1]
-    maps = [shum_map_A, shum_map_D, shum_map_E, shum_map_F, shum_map_G, shum_map_I]
-    map = maps[0]
+    setup = character_setup["character_setup_2h1r1s"]
+    setup["h2"]["agent"] = BruteForceAgent("h2")
+    map = maps["shum_map_A"]
 
     # Setup Values
     map_length = get_map_length(map)
@@ -567,9 +562,9 @@ def main():
     # Initialize Agent
     # agent = QLearningAgent("h1", alpha, epsilon, gamma, delta)
     agent_id = "h1"
-    agent = ApprxReinforcementAgent(agent_id, alpha, epsilon, gamma, extractor=StaghuntExtractor(agent_id))
+    agent = ApprxReinforcementAgent(agent_id, alpha, epsilon, gamma)
 
-    env = create_env(map_length, character_setup, agent, map)
+    env = create_env(map_length, setup, agent, map)
 
     # Agent Training & Metrics
     metrics = train_and_test_agent(env, agent, num_train_epochs=num_epochs, config=default_metrics_config)
