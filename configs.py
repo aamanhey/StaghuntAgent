@@ -4,18 +4,21 @@ train_agent_config = {
     "saveTable": False,
     "tableId" : None,
     "showMetrics" : False,
-    "saveIntermMetrics" : False
+    "saveIntermMetrics" : False,
+    "formatDisplay" : True
 }
 
 test_agent_config = {
     "showMap" : True,
-    "saveFrames" : False
+    "saveFrames" : False,
+    "formatDisplay" : True
 }
 
 test_saved_table = {
     "showMap" : True,
     "saveFrames" : False,
-    "tableId" : None
+    "tableId" : None,
+    "formatDisplay" : True
 }
 
 train_and_test_agent_config = {
@@ -24,7 +27,8 @@ train_and_test_agent_config = {
     "showTestMap" : True,
     "showIntermMetrics" : False,
     "saveIntermMetrics" : True,
-    "saveFrames" : True
+    "saveFrames" : True,
+    "formatDisplay" : True
 }
 
 default_metrics_config = {
@@ -32,7 +36,18 @@ default_metrics_config = {
     'showMetrics' : True,
     'showTestMap' : True,
     'showIntermMetrics' : True,
-    'saveIntermMetrics' : False
+    'saveIntermMetrics' : False,
+    "formatDisplay" : True
+}
+
+grid_search_metrics_config = {
+    'saveMetrics' : False,
+    'showMetrics' : False,
+    'showTestMap' : False,
+    'showIntermMetrics' : False,
+    'saveIntermMetrics' : False,
+    "formatDisplay" : False,
+    "multipleProgressBars" : True
 }
 
 def validate_config(config, valid_config):

@@ -1,6 +1,7 @@
 import random
 import numpy as np
 from encoder import StaghuntEncoder
+from interaction_manager import STEP_COST
 
 TABLE_AGENTS = ["QLearningAgent"]
 
@@ -98,7 +99,7 @@ class StaghuntAgent(RandomAgent):
         # Update agent logic
         final_reward = reward
         if reward == 0 and self.type == "h":
-            final_reward = -1
+            final_reward = STEP_COST
         self.reward += final_reward
 
 class ManualAgent(StaghuntAgent):
@@ -170,24 +171,28 @@ class PreyAgent(StaghuntAgent):
         return curr_pos
 
 class BasicHunterAgent(StaghuntAgent):
-    # Blue agent inspired by Project Malmo
+    # Agent inspired by Project Malmo's Blue Agent
     def __init__(self, id):
         StaghuntAgent.__init__(self, id, "h")
         self.kind = self.kinds["general-hunter"]
         self.prey_types = ["r", "s"]
-        self.prob_random = 0.25
-        self.prob_target_stag = 0.8
+        self.prob_stag_target = 0.75
         self.target = None
+        self.reset_target()
 
-    def set_prob_random(self, prob_random):
-        self.prob_random = prob_random
+    def set_target(self, target_id):
+        self.target = target_id
+
+    def reset_target(self):
+        # @TODO: Make the target setting more dynamic
+        if random.uniform(0, 1) < self.prob_stag_target:
+            self.target = "s1"
+        else:
+            self.target = "r1"
 
     def reset(self):
         self.reward = 0
-        if random.uniform(0, 1) < self.prob_random:
-            self.strategy = "random"
-        else:
-            self.strategy = "proximity"
+        self.reset_target()
 
     def get_distances(self, state):
         # A BFS to calculate distance of hunter to each prey character
@@ -243,10 +248,7 @@ class BasicHunterAgent(StaghuntAgent):
         pos = state.positions[self.id]
         self.map = state.map.copy()
 
-        if self.strategy == "proximity":
-            move = self.calc_proximally_optimal_move(state)
-        else:
-            move = self.get_rand_move(state.positions[self.id])
+        move = self.calc_proximally_optimal_move(state)
 
         return move
 

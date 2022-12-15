@@ -9,8 +9,8 @@ import matplotlib
 from os.path import exists
 from agents import BasicHunterAgent
 from prettytable import PrettyTable
-from feature_extractor import SimpleExtractor, StaghuntExtractor
-from interaction_manager import InteractionManager
+from feature_extractor import StaghuntExtractor
+from interaction_manager import InteractionManager, STEP_COST
 
 matplotlib.use('tkagg')
 plt = matplotlib.pyplot
@@ -110,7 +110,7 @@ class ReinforcementAgent(BasicHunterAgent):
     def step(self, state, action, next_state, reward):
         final_reward = reward
         if reward == 0 and self.type == "h":
-            final_reward = -1
+            final_reward = STEP_COST
 
         if self.inTraining:
             # Update policy
@@ -214,7 +214,7 @@ class QLearningAgent(ReinforcementAgent):
         # Update agent logic
         final_reward = reward
         if reward == 0 and self.type == "h":
-            final_reward = -1
+            final_reward = STEP_COST
 
         if self.inTraining:
             feedback = final_reward + self.gamma * self.calc_max_utility(next_state)
@@ -237,7 +237,7 @@ class QLearningAgent(ReinforcementAgent):
 class ApprxReinforcementAgent(ReinforcementAgent):
     def __init__(self, id, alpha, epsilon, gamma, extractor=None):
         ReinforcementAgent.__init__(self, id, alpha=alpha, epsilon=epsilon, gamma=gamma)
-        self.feature_extractor = extractor if extractor is not None else SimpleExtractor(id)
+        self.feature_extractor = extractor if extractor is not None else StaghuntExtractor(id)
         self.weights = collections.Counter()
         self.action_history = []
         self.showMetrics = False
@@ -318,6 +318,7 @@ class ApprxReinforcementAgent(ReinforcementAgent):
     # Approximation Methods
 
     def init_extractor_map(self, map):
+        # @TODO: Check to see if map layout is the same as preprocessed one
         if not self.feature_extractor.pre_processed:
             self.feature_extractor.pre_process_map(map)
 
@@ -366,7 +367,3 @@ class ApprxReinforcementAgent(ReinforcementAgent):
             self.update_weights(state, action, reward, maxqnext)
 
         self.reward += reward
-
-class ApprxQLearningAgent(ApprxReinforcementAgent):
-    def __init__(self, id, alpha, epsilon, gamma):
-        ApprxReinforcementAgent.__init__(self, id, alpha=alpha, epsilon=epsilon, gamma=gamma, extractor=StaghuntExtractor(id))

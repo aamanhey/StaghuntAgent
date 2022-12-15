@@ -17,6 +17,7 @@ from IPython.display import clear_output
 from registry import Registry
 from setup import MAX_GAME_LENGTH
 from encoder import StaghuntEncoder
+from rendering.main import StaghuntRenderer
 from agents import PreyAgent, BasicHunterAgent, StaghuntAgent
 from interaction_manager import InteractionManager, RABBIT_VALUE, STAG_VALUE
 
@@ -211,10 +212,21 @@ class StaghuntEnv():
     def get_status(self):
         return self.play_status
 
+    def get_terminal_kind(self):
+        return self.terminal_kind
+
     def get_character_positions(self):
         character_pos = []
         for c_key in self.characters_registry.keys():
             character_pos.append()
+
+    def get_state(self):
+        map = self.map
+        state_id = self.encoder.encode(map)
+        positions = self.c_reg.get_positions()
+
+        state = State(state_id, map, positions, self.current_step, positions[self.subject])
+        return state
 
     # Map Methods
 
@@ -327,13 +339,18 @@ class StaghuntEnv():
 
     def check_game_rules(self):
         if self.current_step >= self.MAX_STEP:
+            self.terminal_kind = "TIME_STEPS"
             return False
 
         groups = self.i_manager.get_interactions()
         counts = self.i_manager.get_multi_type_counts(groups)
         for count in counts:
             r, s, h = count
-            if (r > 0 and h > 0) or (s > 0 and h > 1):
+            if (s > 0 and h > 1):
+                self.terminal_kind = "STAG_CAPTURED"
+                return False
+            if (r > 0 and h > 0):
+                self.terminal_kind = "RABBIT_CAPTURED"
                 return False
         return True
 
