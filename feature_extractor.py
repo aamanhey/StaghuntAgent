@@ -3,7 +3,7 @@ import numpy as np
 
 from setup import MAX_GAME_LENGTH
 from encoder import StaghuntEncoder
-from interaction_manager import InteractionManager, RABBIT_VALUE, STAG_VALUE
+from interaction_manager import InteractionManager, RABBIT_VALUE, STAG_VALUE, STEP_COST
 
 class FeatureExtractor():
     def __init__(self, id):
@@ -74,7 +74,7 @@ class FeatureExtractor():
             item =  self.cache[key]
             print(" {} had {} references.".format(key, item["ctr"]))
 
-class SimpleExtractor(FeatureExtractor):
+class StaghuntExtractor(FeatureExtractor):
     def __init__(self, id):
         FeatureExtractor.__init__(self, id)
         self.pre_processed = False
@@ -163,6 +163,13 @@ class SimpleExtractor(FeatureExtractor):
                     dist, path = character_distances[c_key].values()
                     # distance: self.max_dist - dist
                     # Note: If feature weight < 0 then worse distances will be be selected
+                    value = 0
+                    if c_key[0] == "r":
+                        value = (RABBIT_VALUE - dist * STEP_COST) / RABBIT_VALUE
+                        features["{}-payoff-for-{}".format(id, c_key)] = value
+                    elif c_key[0] == "s":
+                        value = (RABBIT_VALUE - dist * STEP_COST) / RABBIT_VALUE
+                    features["{}-payoff-for-{}".format(id, c_key)] = value
                     features["{}-dist-to-{}".format(id, c_key)] = (self.max_dist - dist) / self.max_dist #1 / (dist + 1)
 
         return features
@@ -176,66 +183,5 @@ class SimpleExtractor(FeatureExtractor):
         features = self.calculate_features(state)
 
         self.update_cache(state.id, features)
-
-        return features
-
-class StaghuntExtractor(SimpleExtractor):
-    def __init__(self, id):
-        SimpleExtractor.__init__(self, id)
-
-    def valid_prey_and_pos(self, map, pos):
-        x, y = pos
-        num_rabbits = 0
-        num_stags = 0
-        if self.valid_pos(map, pos):
-            space = map[y][x]
-            r, s, h = self.im.get_type_counts(space)
-            num_rabbits += r
-            num_stags += s
-        return (num_rabbits, num_stags)
-
-    def count_turns(self, path):
-        if len(path) <= 1:
-            return 0
-        num_turns = 0
-        diff = [path[1][0] - path[0][0], path[1][1] - path[0][1]]
-        for i in range(len(path) - 1):
-            curr = path[i]
-            next = path[i+1]
-            if tuple((curr[0] + diff[0], curr[1] + diff[1])) != next:
-                diff = [next[0] - curr[0], next[1] - curr[1]]
-                num_turns += 1
-        return num_turns
-
-    def count_num_prey_adjacent(self, state):
-        num_rabbits = 0
-        num_stags = 0
-        x, y = state.positions[self.id]
-        map = state.map
-        adjacent = [self.valid_prey_and_pos(map, (x, y - 1)), self.valid_prey_and_pos(map, (x + 1, y)), self.valid_prey_and_pos(map, (x, y + 1)), self.valid_prey_and_pos(map, (x - 1, y))]
-        for count in adjacent:
-            r, s = count
-            num_rabbits += r
-            num_stags += s
-        return (num_rabbits, num_stags)
-
-    def calculate_features(self, state):
-        '''
-        Features:
-        - bias
-        - num-steps: current number of steps / total number of steps
-        - distance-to-{}: distance hunter to each prey / max distance ∈ [0, 1) -> Expand for all hunters
-        - labor vs. return-{} (LVR): value of each prey * distance to each prey /  max distance ∈ [0, 1)
-        - count-turns-to-{}: the number of turns that a hunter needs to take to get to target ∈ [0, 1)
-        - num-{}-adjacent: # of each kind prey one step away / total # of each prey ∈ [0, 1]
-        '''
-
-        features = collections.Counter()
-        features["bias"] = 1.0
-
-        # @TODO: Add more features
-        num_rabbits, num_stags = self.count_num_prey_adjacent(state)
-        features["num_rabbits"] = num_rabbits
-        features["num_stags"] = num_stags
 
         return features

@@ -1,7 +1,8 @@
 import collections
 
 RABBIT_VALUE = 5
-STAG_VALUE = 20
+STAG_VALUE = 50
+STEP_COST = -0.5
 
 class InteractionManager:
     def __init__(self, c_reg=None):
