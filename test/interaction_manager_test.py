@@ -1,7 +1,7 @@
 # Test Class for the Encoder
-from interaction_manager import InteractionManager, RABBIT_VALUE, STAG_VALUE
-
 import unittest
+
+from context import InteractionManager, RABBIT_VALUE, STAG_VALUE
 
 c_reg = {}
 im = InteractionManager(c_reg)

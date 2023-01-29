@@ -3,10 +3,8 @@ import math
 import unittest
 import numpy as np
 
-from state import State
-from encoder import StaghuntEncoder
-from feature_extractor import StaghuntExtractor
-from setup import simple_map, character_setup_1h1s1r, custom_map, map_init
+from context import State, StaghuntEncoder, StaghuntExtractor
+from context import simple_map, character_setup_1h1s1r, custom_map, map_init
 
 id = "h1"
 extr = StaghuntExtractor(id)

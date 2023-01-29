@@ -8,15 +8,14 @@ import matplotlib
 import numpy as np
 import beepy as beep
 
-from configs import *
-# from train_utils import *
+from evaluation_configs import *
 from prettytable import PrettyTable
 from environment import StaghuntEnv
+from setup import map_init, setup_init
 from feature_extractor import StaghuntExtractor
-from interaction_manager import RABBIT_VALUE, STAG_VALUE
 from agents import TABLE_AGENTS, ManualAgent, BruteForceAgent
-from setup import MAX_GAME_LENGTH, maps, map_init, setup_init
 from rl_agents import QLearningAgent, ApprxReinforcementAgent
+from game_configs import RABBIT_VALUE, STAG_VALUE, MAX_GAME_LENGTH, maps
 
 matplotlib.use('tkagg')
 plt = matplotlib.pyplot
@@ -160,7 +159,6 @@ def brute_force():
     subject = env.get_subject()
     agent = subject["agent"]
     r = agent.reward
-    #agent.reset()
 
     k = 10
     t_steps, t_reward = train_k_eps(env, k)
@@ -237,10 +235,10 @@ def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, config=train_age
 
         # updating plot values
         if config["showMetrics"]:
-            # @TODO: Add funtion to update metrics
             indices.append(episode)
             avg_r.append(np.average(metrics["rewards"]))
             avg_e.append(np.average(metrics["epochs"]))
+
             k = num_epochs // 100 if num_epochs > 100 else 1
             if episode % k == 0:
                 line1.set_xdata(indices[::k])
@@ -262,13 +260,12 @@ def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, config=train_age
         episode += 1
 
     if config["saveIntermMetrics"]:
-        plt_id = get_folder_size('./plots')
-        plt.savefig('plots/interm-metrics-{}.png'.format(plt_id))
+        plt_id = get_folder_size('./results/plots')
+        plt.savefig('results/plots/interm-metrics-{}.png'.format(plt_id))
         plt.ioff()
 
     if config["formatDisplay"]:
         print("Averages were {} epochs and {} rewards.".format(np.average(metrics["epochs"]), np.average(metrics["rewards"])))
-        # outpdwtput[:-1] + ".")
         print("Finished training.")
 
     if hasTable:
@@ -278,7 +275,7 @@ def train_agent(env, agent, num_epochs=10001, percent_conv=0.2, config=train_age
             agent = subject["agent"]
             id = tableId
             if config["tableId"] is None:
-                id = get_folder_size('./tables')
+                id = get_folder_size('./results/tables')
             agent.save_q_table(tableId)
 
         metrics["epochs ran"] = i
@@ -407,8 +404,8 @@ def train_and_test_agent(env, agent, num_train_epochs=None, num_test_epochs=10, 
         metrics.update(table_metrics)
 
     if config["saveMetrics"]:
-        id = get_folder_size('./metrics')
-        filename = 'metrics/metric-{}'.format(id)
+        id = get_folder_size('./results/metrics')
+        filename = 'results/metrics/metric-{}'.format(id)
 
         print("Saving metrics as '{}'".format(filename))
         with open(filename,'wb') as fp:
@@ -438,6 +435,10 @@ def train_and_test_agent_with_params(agent_id, setup, map, num_epochs, precision
     alpha_range = np.arange(M, 1, M)
     epsilon_range = np.arange(M, 1, M)
     gamma_range = np.arange(M, 1, M)
+
+    # Q-Learning Params
+    delta_range = [0.1, 0.001, 0.0001, 0.00001]
+    percent_conv_range = np.arange(0.1, 0.5, 0.1)
 
     min_epochs = 999999
     max_reward = -999999
@@ -506,8 +507,10 @@ def train_and_test_agent_with_params(agent_id, setup, map, num_epochs, precision
 
 ''' Evaluation '''
 def calc_delta_metrics(metrics):
-     # metrics should have num epochs, deltas, and params
-     # Find at what epoch a percentage of delta was reached
+     '''
+     Metrics should have num epochs, deltas, and params.
+     Find at what epoch a percentage of delta was reached.
+     '''
      critical_indices = {"indices":[], "proportions": []}
      perc = 0
      for epoch in range(1, metrics["num epochs"]):
@@ -555,7 +558,7 @@ def find_optimal_params(agent_id, precision, num_epochs, character_setup_name="c
 
     print("Optimal Metrics:\n", optimal_metrics)
 
-    filename = 'metrics/optimal-metric-{}'.format(precision)
+    filename = 'results/metrics/optimal-metric-{}'.format(precision)
 
     print("Saving metrics as '{}'".format(filename))
     with open(filename,'wb') as fp:
@@ -563,6 +566,14 @@ def find_optimal_params(agent_id, precision, num_epochs, character_setup_name="c
 
     return optimal_metrics
 
+'''
+@TODO:
+- Get metrics for optimization
+    - What was the improvement when the hyper parameters were configured?
+    - What was the improvement after the cache was emptied?
+- What are the limits of the Q-Learning method?
+    - At what point does it become unreasonable?
+'''
 
 ''' Main '''
 def main():
@@ -574,16 +585,17 @@ def main():
 
     # Setup Values
     map_length = get_map_length(map)
-    alpha = 0.2 #0.1
-    epsilon = 0.6 #0.45
-    gamma = 0.4 #0.8
+    alpha = 0.2
+    epsilon = 0.6
+    gamma = 0.4
     delta = 0.001
 
+    # Increased epochs from 10000 to 100000 and STAG_VALUE from 20 to 50
 
-    num_epochs = 100000 # math.ceil(1000 * (10**len(character_setup)) + 1)
+    default_epochs = {'s' : 100, 'm' : 10000, 'l' : 100000, 'xl' : 10000000, 'dynamic' : math.ceil(1000 * (10**len(character_setup)) + 1) }
+    num_epochs = default_epochs['s']
 
     # Initialize Agent
-    # agent = QLearningAgent("h1", alpha, epsilon, gamma, delta)
     agent_id = "h1"
     agent = ApprxReinforcementAgent(agent_id, alpha, epsilon, gamma) #, extractor=StaghuntExtractor(agent_id)
 
@@ -597,5 +609,6 @@ def main():
     agent.print_features_info()
 
     # optimal_metrics = find_optimal_params("h1", 2, 10000)
+
 if __name__ == '__main__':
     main()

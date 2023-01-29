@@ -1,7 +1,8 @@
 import random
 import numpy as np
+
 from encoder import StaghuntEncoder
-from interaction_manager import STEP_COST
+from game_configs import STEP_COST
 
 TABLE_AGENTS = ["QLearningAgent"]
 

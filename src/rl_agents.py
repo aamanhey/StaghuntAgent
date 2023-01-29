@@ -1,5 +1,3 @@
-import sys
-import math
 import pickle
 import random
 import collections
@@ -7,10 +5,11 @@ import numpy as np
 import matplotlib
 
 from os.path import exists
+from game_configs import STEP_COST
 from agents import BasicHunterAgent
 from prettytable import PrettyTable
 from feature_extractor import StaghuntExtractor
-from interaction_manager import InteractionManager, STEP_COST
+from interaction_manager import InteractionManager
 
 matplotlib.use('tkagg')
 plt = matplotlib.pyplot
@@ -156,14 +155,14 @@ class QLearningAgent(ReinforcementAgent):
         return abs(delta/divisor)
 
     def save_q_table(self, id=None):
-        filename = 'tables/q-table-{}'.format(id)
+        filename = 'results/tables/q-table-{}'.format(id)
 
         print("Saving table as '{}'".format(filename))
         with open(filename,'wb') as fp:
             pickle.dump(self.q_value, fp)
 
     def load_q_table(self, id=None):
-        filename = 'tables/q-table-{}'.format(id)
+        filename = 'results/tables/q-table-{}'.format(id)
         file_exists = exists(filename)
         if file_exists:
             with open(filename,'rb') as fp:

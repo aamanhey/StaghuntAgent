@@ -1,8 +1,6 @@
 import collections
 
-RABBIT_VALUE = 5
-STAG_VALUE = 50
-STEP_COST = -0.5
+from game_configs import RABBIT_VALUE, STAG_VALUE, STEP_COST
 
 class InteractionManager:
     def __init__(self, c_reg=None):

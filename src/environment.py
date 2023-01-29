@@ -1,36 +1,22 @@
-import cv2
-import sys
-import math
 import random
-import pickle
 import colorama
 import numpy as np
 import beepy as beep
 import matplotlib.pyplot as plt
 
-from state import State
 from os.path import exists
 from colorama import Fore, Back, Style
 from IPython.display import clear_output
 
 # Staghunt Libraries
+from state import State
 from registry import Registry
-from setup import MAX_GAME_LENGTH
 from encoder import StaghuntEncoder
-from rendering.main import StaghuntRenderer
+from interaction_manager import InteractionManager
 from agents import PreyAgent, BasicHunterAgent, StaghuntAgent
-from interaction_manager import InteractionManager, RABBIT_VALUE, STAG_VALUE
-
-'''
-Fore: BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE, RESET.
-Back: BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE, RESET.
-Style: DIM, NORMAL, BRIGHT, RESET_ALL
-'''
+from game_configs import MAX_GAME_LENGTH, RABBIT_VALUE, STAG_VALUE, STEP_COST, CLEAR_SCREEN, RED, RESET
 
 colorama.init()
-CLEAR_SCREEN = '\033[2J'
-RED = '\033[31m'   # mode 31 = red forground
-RESET = '\033[0m'  # mode 0  = reset
 
 class StaghuntEnv():
     def __init__(self, map_dim=7, game_length=MAX_GAME_LENGTH, characters={}, map=None):
@@ -259,12 +245,12 @@ class StaghuntEnv():
             print("E: Too many characters in the game")
             return reference_dict[64]
 
-    def create_map(self, m, n=0, c=1):
+    def create_map(self, map_length, n=0, c=1):
         d = self.get_d_type(c)
-        l = m # map length
+        l = map_length
         while (l-1)**2 < c:
             l += 1
-        if l != m:
+        if l != map_length:
             print("E: Too many characters for the desired map, map length increased to {}.".format(l))
         k = n if n >= l else l
         world = np.zeros((l, k), dtype=d)
@@ -403,16 +389,6 @@ class StaghuntEnv():
             self.map[y][x] = encoded_id
 
         self.i_manager.set_reg(self.c_reg.get_characters())
-
-    # Display Methods
-
-    def create_canvas(self):
-        # Reset the canvas
-        self.canvas = np.ones(self.window_shape) * 1
-        text = 'Staghunt Environment'
-        font = font = cv2.FONT_HERSHEY_COMPLEX_SMALL
-        self.canvas = cv2.putText(self.canvas, text, (10,20), font,
-                    0.8, (0,0,0), 1, cv2.LINE_AA)
 
 def main():
     # Setup Staghunt Environment

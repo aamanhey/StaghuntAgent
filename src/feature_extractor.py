@@ -1,13 +1,13 @@
 import collections
 import numpy as np
 
-from setup import MAX_GAME_LENGTH
 from encoder import StaghuntEncoder
-from interaction_manager import InteractionManager, RABBIT_VALUE, STAG_VALUE, STEP_COST
+from interaction_manager import InteractionManager
+from game_configs import MAX_GAME_LENGTH, RABBIT_VALUE, STAG_VALUE, STEP_COST
 
 class FeatureExtractor():
-    def __init__(self, id):
-        self.id = id # id of agent
+    def __init__(self, agent_id):
+        self.id = agent_id
         self.enc = StaghuntEncoder()
         self.im = InteractionManager()
         self.max_cache_size = 20

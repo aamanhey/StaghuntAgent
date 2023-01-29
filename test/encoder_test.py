@@ -1,6 +1,7 @@
 # Test Class for the Encoder
 import unittest
-from encoder import Encoder
+
+from context import Encoder
 
 e = Encoder()
 

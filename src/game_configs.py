@@ -1,7 +1,19 @@
 import numpy as np
-from encoder import StaghuntEncoder
 
+STEP_COST = -0.5
+STAG_VALUE = 50
+RABBIT_VALUE = 5
 MAX_GAME_LENGTH = 30
+
+'''
+Terminal Printing Highlighting Guide
+Fore: BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE, RESET.
+Back: BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE, RESET.
+Style: DIM, NORMAL, BRIGHT, RESET_ALL
+'''
+CLEAR_SCREEN = '\033[2J'
+RED = '\033[31m'   # mode 31 = red forground
+RESET = '\033[0m'  # mode 0  = reset
 
 ''' Character Configurations '''
 character_setup_full = {
@@ -115,22 +127,3 @@ maps = {
     "shum_map_G" : shum_map_G,
     "shum_map_I" : shum_map_I
 }
-
-''' Create Setups and Maps '''
-def map_init(enc=StaghuntEncoder(), map=shum_map_A, positions={}):
-    map = map.copy()
-    for key in positions.keys():
-        x, y = positions[key]
-        map[y][x] = enc.encode_id([key])
-    return map
-
-def character_setup_init(setup_name="character_setup_2h1r1s", agent=None):
-    setup = character_setup[setup_name]
-    if agent is not None:
-        setup["h2"]["agent"] = agent
-    return setup
-
-def setup_init(setup_name="character_setup_2h1r1s", agent=None, map_name="shum_map_A"):
-    setup = character_setup_init(setup_name, agent)
-    map = maps[map_name]
-    return setup, map
