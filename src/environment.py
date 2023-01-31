@@ -12,6 +12,7 @@ from IPython.display import clear_output
 from state import State
 from registry import Registry
 from encoder import StaghuntEncoder
+from rendering.main import StaghuntRenderer
 from interaction_manager import InteractionManager
 from agents import PreyAgent, BasicHunterAgent, StaghuntAgent
 from game_configs import MAX_GAME_LENGTH, RABBIT_VALUE, STAG_VALUE, STEP_COST, CLEAR_SCREEN, RED, RESET
@@ -73,6 +74,7 @@ class StaghuntEnv():
         self.i_manager = InteractionManager(self.c_reg.get_characters())
 
         # Display
+        self.open_pygame = False
         self.window_shape = (500, 500, 3)
         self.canvas = np.ones(self.window_shape) * 1
 
@@ -89,6 +91,11 @@ class StaghuntEnv():
         self.c_reg.reset_rewards()
 
         self.state = self.encoder.encode(self.map)
+
+        # Reset display if open
+        if self.open_pygame:
+            state = self.get_state()
+            self.pygame.reset(state)
 
         return self.state
 
@@ -389,6 +396,21 @@ class StaghuntEnv():
             self.map[y][x] = encoded_id
 
         self.i_manager.set_reg(self.c_reg.get_characters())
+
+    # Display Methods
+    def full_render(self):
+        state = self.get_state()
+        if self.open_pygame:
+            self.pygame.step(state)
+        else:
+            self.open_pygame = True
+            self.pygame = StaghuntRenderer(state, autonomous=True, encoder=self.encoder)
+            self.pygame.visualize()
+
+    def stop_pygame(self):
+        if self.open_pygame:
+            self.open_pygame = False
+            self.pygame.stop()
 
 def main():
     # Setup Staghunt Environment

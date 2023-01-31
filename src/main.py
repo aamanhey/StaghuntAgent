@@ -20,10 +20,6 @@ from game_configs import RABBIT_VALUE, STAG_VALUE, MAX_GAME_LENGTH, maps
 matplotlib.use('tkagg')
 plt = matplotlib.pyplot
 
-'''
-Camel case variables represent config vars.
-'''
-
 ''' Utils '''
 def create_metric_plot(num_epochs, agent_name):
     plt.ion()
@@ -333,6 +329,22 @@ def test_agent(test_env, agent, num_epochs=10, config=test_agent_config):
 
     return metrics
 
+def visualize_test_agent(test_env, agent):
+    test_agent = True
+    while test_agent:
+        state = test_env.reset()
+        time.sleep(3)
+        print("New Test")
+        while test_env.get_status():
+            test_env.step()
+            test_env.full_render()
+            input("continue?")
+        user_input = input("Test again?(Y/N): ")
+        test_agent = (user_input in ["Y","y", "Yes", "yes"])
+    test_env.stop_pygame()
+
+
+
 def test_saved_table(test_env, agent, num_epochs=10, config=test_saved_table):
     config = validate_config(config, test_saved_table)
 
@@ -592,8 +604,8 @@ def main():
 
     # Increased epochs from 10000 to 100000 and STAG_VALUE from 20 to 50
 
-    default_epochs = {'s' : 100, 'm' : 10000, 'l' : 100000, 'xl' : 10000000, 'dynamic' : math.ceil(1000 * (10**len(character_setup)) + 1) }
-    num_epochs = default_epochs['s']
+    default_epochs = {'xs' : 11, 's' : 100, 'm' : 10000, 'l' : 100000, 'xl' : 10000000, 'dynamic' : math.ceil(1000 * (10**len(setup)) + 1) }
+    num_epochs = default_epochs['xs']
 
     # Initialize Agent
     agent_id = "h1"
@@ -605,10 +617,32 @@ def main():
     config = default_metrics_config
     config["saveIntermMetrics"] = True
     metrics = train_and_test_agent(env, agent, num_train_epochs=num_epochs, config=config)
-    agent.print_weights()
-    agent.print_features_info()
+    # agent.print_weights()
+    # agent.print_features_info()
+
+    visualize_test_agent(env, agent)
 
     # optimal_metrics = find_optimal_params("h1", 2, 10000)
+
+# Test Updated Rendering
+# @Todo: Fix rendering
+def test_render():
+    os.system('clear')
+    print('Testing rendering')
+    setup, map = setup_init(setup_name="character_setup_simple", map_name="shum_map_A")
+    map_length = get_map_length(map)
+
+    alpha = 0.2
+    epsilon = 0.6
+    gamma = 0.4
+
+    agent_id = "h1"
+    agent = ApprxReinforcementAgent(agent_id, alpha, epsilon, gamma)
+
+    env = create_env(map_length, setup, agent, map)
+    env.reset()
+    env.full_render()
+    print('done')
 
 if __name__ == '__main__':
     main()

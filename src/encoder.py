@@ -58,7 +58,7 @@ class Encoder():
         for i in range(m):
             for j in range(n):
                 map[i][j] = int(encoded_state[i*n + j])
-        return index_arr
+        return map
 
 class StaghuntEncoder(Encoder):
     def __init__(self):
